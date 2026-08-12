@@ -295,6 +295,39 @@ def test_the_last_run_is_the_most_recent_one(client):
     )
 
 
+def test_the_timeline_is_plain_text_one_curl_away(client):
+    """The simplest proof the mesh is real: no browser, no JSON parsing, and
+    it survives a paste into an issue."""
+    client.post("/api/research", json=brief())
+
+    response = client.get("/api/timeline")
+
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert "solid-state batteries in 2026" in response.text
+
+
+def test_the_timeline_can_walk_back_through_the_store(client):
+    client.post("/api/research", json={"topic": "the older brief, chronologically"})
+    client.post("/api/research", json={"topic": "the newer brief, chronologically"})
+
+    assert "newer" in client.get("/api/timeline").text
+    assert "older" in client.get("/api/timeline?n=2").text
+
+
+def test_walking_back_past_the_beginning_is_a_404_not_a_wrong_answer(client):
+    client.post("/api/research", json=brief())
+
+    response = client.get("/api/timeline?n=9")
+
+    assert response.status_code == 404
+    assert "only 1 run" in response.text
+
+
+def test_a_nonsense_timeline_index_is_rejected(client):
+    assert client.get("/api/timeline?n=abc").status_code in (400, 404)
+
+
 def test_asking_for_the_last_run_before_there_is_one_is_a_404(client):
     response = client.get("/api/last")
 
