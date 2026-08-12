@@ -12,22 +12,15 @@ one coordinator, each on its own vendor's model.
 
 import argparse
 import asyncio
-import os
 
 from pydantic import ValidationError
 
-from clients import CLIENT_STACKS, load_client
+from clients import CLIENT_STACKS
 from coordinator.judge import JUDGE_MODES, load_judge
 from coordinator.mesh import ResearchMesh
 from coordinator.models import ResearchRequest
-from coordinator.participants import Participant, auth_mode, credentials_for
+from coordinator.participants import CLOUD_ENDPOINTS, Participant, build_participants
 from evaluations.store import record
-
-CLOUD_ENDPOINTS = {
-    "gcp": ("GCP_A2A_ENDPOINT", "http://127.0.0.1:10001"),
-    "aws": ("AWS_A2A_ENDPOINT", "http://127.0.0.1:10002"),
-    "azure": ("AZURE_A2A_ENDPOINT", "http://127.0.0.1:10003"),
-}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,30 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_participants(args) -> list[Participant]:
-    clouds = args.cloud or list(CLOUD_ENDPOINTS)
-    participants: list[Participant] = []
-    for cloud in clouds:
-        env_var, default = CLOUD_ENDPOINTS[cloud]
-        endpoint = os.getenv(env_var, default)
-        auth = credentials_for(cloud, endpoint)
-        participants.append(
-            Participant(
-                name=cloud,
-                source=load_client(
-                    args.client,
-                    endpoint,
-                    source=cloud,
-                    cloud=cloud,
-                    timeout_s=args.timeout_seconds,
-                    auth=auth,
-                ),
-                cloud=cloud,
-                stack=args.client,
-                auth=auth_mode(auth),
-            )
-        )
-    return participants
+def participants_for(args) -> list[Participant]:
+    return build_participants(
+        args.cloud,
+        client=args.client,
+        timeout_seconds=args.timeout_seconds,
+    )
 
 
 def render(run, *, show_drafts: bool = False) -> str:
@@ -161,7 +136,7 @@ async def _run(args) -> int:
         return 2
 
     mesh = ResearchMesh(
-        build_participants(args),
+        participants_for(args),
         judge=load_judge(args.judge),
         timeout_seconds=args.timeout_seconds,
     )

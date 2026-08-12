@@ -1,0 +1,24 @@
+# What the source deploy installs. The Cloud Run Python buildpack reads this
+# file and nothing else -- it does not read pyproject.toml -- so this is a
+# second dependency list by necessity rather than by choice, and it covers the
+# union of every process built from this repo on GCP:
+#
+#   coordinator.service   master + judge + front end   (the Procfile entrypoint)
+#   agents.gcp.server     the GCP researcher           (--command override)
+#   matrix.runner         all three client stacks      (the 3x3 job)
+#
+# strands-agents and bedrock-agentcore are absent deliberately: the AWS
+# researcher runs on AWS, from infra/Dockerfile.aws. Nothing built here imports
+# them, and installing them anyway would make an import error on this image
+# impossible to distinguish from an import error on that one.
+#
+# Nothing is pinned. See CLAUDE.md: the one legitimate reason to pin is a
+# measured failure that names itself in a comment, and there is currently none.
+a2a-sdk[http-server]
+google-adk
+agent-framework-a2a
+agent-framework-core
+pydantic
+httpx
+starlette
+uvicorn

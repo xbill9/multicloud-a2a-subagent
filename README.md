@@ -7,13 +7,22 @@ They write independently. A judge reads all three blind, scores them against a
 fixed rubric, and names a winner. Every run is appended to an audit that
 compares the models over time.
 
-The coordinator runs on Cloud Run, which is what makes the whole mesh keyless:
-it is the only runtime here proven to mint workload OIDC tokens with an
-arbitrary audience, so every outbound leg is federated rather than holding a
-stored secret.
+The front door is on Google. A person opens a page, types a brief, and one
+Cloud Run service fans it out, collects the drafts and judges them. That
+service runs on Cloud Run because that is what makes the whole mesh keyless: it
+is the only runtime here proven to mint workload OIDC tokens with an arbitrary
+audience, so every outbound leg is federated rather than holding a stored
+secret.
 
 ```text
-              coordinator + judge   (Cloud Run job, us-central1)
+                     you, in a browser
+                          |
+          ....................................
+          :  master   (Cloud Run, us-central1) :
+          :    front end                       :   deployed from source.
+          :    fan-out                         :   no Dockerfile, no image
+          :    judge, in-process               :   recipe -- Procfile only
+          :.................................. :
                           |
           +---------------+---------------+
           | A2A v1.0      | A2A v1.0      | A2A v1.0
@@ -34,8 +43,21 @@ stored secret.
                           |
               winner + per-dimension scores
                           |
-                    evaluations/  (append-only)
+              evaluations/  (append-only, GCS)
 ```
+
+**The judge runs inside the master, not as a fourth agent.** It has to see all
+three drafts before it can rank them, so it is the one step that cannot begin
+until the slowest cloud has answered — and a network hop there would add a leg
+that fails *after* every expensive call has already succeeded. It is a pure
+function of the drafts and does not need its own address.
+
+**The master is not an agent, and nothing here is a subagent** despite the
+repository's name. The fan-out is unconditional: every cloud gets a
+byte-identical brief on every run. That is what makes the audit mean anything —
+hand routing to a model and it may ask two of three, or rephrase the brief per
+cloud, and `evaluations/` stops measuring the models and starts measuring the
+router.
 
 ## Status: read this before anything else
 
@@ -47,12 +69,22 @@ replaced it on 2026-08-12 and has only ever run locally.
 
 | | built | tested | run locally | deployed | measured |
 |---|---|---|---|---|---|
+| Master service — fan-out + judge over HTTP | yes | yes | yes | **no** | n/a |
+| Master service — front end page | yes | served, not rendered | served | **no** | n/a |
+| Containerless deploy (`Procfile`, source build) | yes | **cannot be** | n/a | **no** | n/a |
 | Three research agents, `direct` brain | yes | yes | yes | **no** | n/a |
 | Three research agents, `llm` brain | yes | construction only | **no** | **no** | **no** |
 | Judge — deterministic rubric | yes | yes | yes | **no** | n/a |
 | Judge — model | yes | failure paths only | **no** | **no** | **no** |
 | Audit / report | yes | yes | yes (refusing) | **no** | **no** |
 | Cross-cloud federation (`coordinator/auth.py`) | unchanged | yes | n/a | **stale** | was, on the old code |
+
+Two rows deserve their wording. **"served, not rendered"**: the page is
+returned by the service and its script parses, and nobody has opened it in a
+browser — a page can do both of those and still lay out wrong. **"cannot be"**:
+no local test can tell you whether the Python buildpack starts
+`coordinator.service:app` from the `Procfile` on Cloud Run, and of everything
+listed here that is the single most likely thing to be broken on first deploy.
 
 "Stale" is the important row. The three federation paths are untouched and were
 proven end to end with negative controls under the currency mesh, but the code
@@ -248,9 +280,12 @@ Requires Python 3.13 and `uv`.
 uv pip install --system \
   "a2a-sdk[http-server]" google-adk \
   agent-framework-a2a agent-framework-core \
-  pydantic httpx uvicorn pytest pytest-asyncio
+  pydantic httpx starlette uvicorn pytest pytest-asyncio
 uv pip install --system -e .
 ```
+
+`requirements.txt` is the same list minus the test tools, and exists because
+the Cloud Run buildpack reads it and does not read `pyproject.toml`.
 
 Latest of everything, no virtualenv — see `CLAUDE.md`. Nothing is pinned. The
 last pin, `mcp<2`, left with the MCP scaffolding it existed for.
@@ -262,6 +297,9 @@ path runs without it.
 
 ```bash
 ./infra/run_mesh.sh start        # three agents on :10001 :10002 :10003
+
+python3 -m uvicorn coordinator.service:app --port 8099   # the master, at /
+
 python3 -m matrix.runner --json report.json
 python3 -m coordinator.cli "solid-state batteries in 2026" \
     --question "who ships at scale?" --show-drafts
@@ -269,19 +307,46 @@ python3 -m evaluations.report
 ./infra/run_mesh.sh stop
 ```
 
+The service and the CLI are two front ends on one mesh, not two meshes: both
+build their participants through `coordinator.participants.build_participants`,
+so they cannot disagree about which clouds are wired or how a leg
+authenticates. The CLI is still the right shape for a scheduled, recorded run
+and a poor one for a person with a question.
+
+Local, against the local mesh, all three legs `direct`:
+
+```console
+$ curl -s -XPOST localhost:8099/api/research -H 'content-type: application/json' \
+    -d '{"topic":"solid-state batteries in 2026","questions":["who ships at scale?"]}'
+
+winner: azure  [3/3 clouds, judge=rubric, blind]
+  1. azure  15.0/25  brain=direct  92w   13ms
+  2. aws    15.0/25  brain=direct  92w   18ms
+  3. gcp    15.0/25  brain=direct  92w  162ms
+warning: winner is ahead by only 0.00 of 25 points; treat this as a tie
+elapsed 163ms
+```
+
+Three identical canned drafts, ranked by latency, and the run says so. Elapsed
+tracks the slowest leg rather than their sum, which is the fan-out working.
+Not an evaluation, and the page refuses to present it as one: any draft whose
+`brain` is not `llm` puts a banner above the result saying this is not a model
+comparison.
+
 Tests are hermetic by default; the live suite skips itself unless the mesh is
 up, and the duplicate-reply test skips itself if any agent is running degraded.
 
 ```bash
-python3 -m pytest tests/ -q     # 160 passed with the mesh up, 143 without
+python3 -m pytest tests/ -q     # 183 passed with the mesh up, 168 without
 ```
 
 ## Deployed
 
-**Nothing in this architecture is deployed yet.** The scripts below are
+**Nothing in this architecture is deployed yet.** The AWS and Azure scripts are
 carried over from the currency mesh with their environment variables renamed
-(`RESEARCH_MODEL_MODE`, `RESEARCH_COORDINATOR_CLOUD`) and the coordinator's
-arguments changed from a conversion to a brief. They have not been run since.
+(`RESEARCH_MODEL_MODE`, `RESEARCH_COORDINATOR_CLOUD`) and have not been run
+since. `deploy_gcp.sh` is new work on top of them: it now deploys the master
+and it deploys from source.
 
 ```bash
 ./infra/deploy_aws.sh   deploy   # AgentCore Runtime + the federated role
@@ -289,12 +354,36 @@ arguments changed from a conversion to a brief. They have not been run since.
 ./infra/deploy_azure.sh fic      # Entra app registration + FIC on Google's issuer
 ./infra/deploy_azure.sh auth     # make the ingress demand it
 
-./infra/deploy_gcp.sh deploy     # ADK service + coordinator job + roles/run.invoker
-./infra/deploy_gcp.sh wire       # fold the AWS and Azure legs into the job
-./infra/deploy_gcp.sh run        # one brief, three clouds, from the cloud
+./infra/deploy_gcp.sh deploy     # master + GCP researcher + jobs, one source build
+./infra/deploy_gcp.sh wire       # fold the AWS and Azure legs into both
+./infra/deploy_gcp.sh open       # grant yourself run.invoker, print the proxy command
+./infra/deploy_gcp.sh run        # one brief, three clouds, unattended
 ./infra/deploy_gcp.sh matrix     # the 3x3, every client against every hosted server
 ./infra/deploy_gcp.sh verify     # the negative controls
 ```
+
+**Containerless, and specifically what that cost.** There is no Dockerfile at
+the repo root any more. `gcloud run deploy --source` prefers a root Dockerfile
+when it finds one, so the GCP researcher's recipe sitting there would silently
+turn every source deploy into a container build of the wrong process; it lives
+at `infra/Dockerfile.gcp` now as a fallback nothing reads. The buildpack reads
+`requirements.txt` and not `pyproject.toml`, so GCP dependencies are declared
+in two places by necessity. Only the master is built; the researcher and both
+jobs deploy *the image that build produced*, read back off the master by
+digest, so "the researcher runs the same code as the master" is a fact about
+the deployment rather than a claim about the repo.
+
+**The front end is private.** `--no-allow-unauthenticated`, like everything
+else here, reached through `gcloud run services proxy`. It holds credentials
+for three clouds and is the only surface a person is meant to open, which is
+exactly the combination that gets something made public to try it once.
+`PUBLIC=1` overrides and says so on stderr; `verify` checks the page 403s.
+
+**The audit lives in GCS.** Cloud Run's filesystem does not outlive the
+instance, so `evaluations/` is a bucket mounted at `/eval` and the service is
+pinned to one instance — a GCS volume write is a whole-object rewrite, not an
+append, so two concurrent runs would lose one of themselves. `destroy` leaves
+the bucket behind deliberately.
 
 The `currency-*` cloud resource names are deliberately **not** renamed. They
 are deployed identities, not labels: the coordinator service account's numeric
@@ -335,7 +424,15 @@ matrix axes apply unchanged.
 
 ## Not done
 
-- **Nothing is deployed.** The whole table at the top of this file.
+- **Nothing is deployed.** The whole table at the top of this file. The
+  buildpack path in particular has never been exercised: the `Procfile`
+  entrypoint, the `--command` override that turns the same image into the
+  researcher, the GCS volume mount, and reading the built image back off the
+  master by digest are four things that can only be found broken by running
+  `./infra/deploy_gcp.sh deploy`.
+- **Nobody has opened the front end in a browser.** It is served, its script
+  parses, and every field it reads is asserted in `tests/test_service.py`. That
+  is not the same as it looking right.
 - **No model has ever written a draft here.** `llm` mode is built on all three
   clouds and has been constructed in a test; it has not answered a brief.
 - **The model judge has never judged.** Its failure paths are covered — an

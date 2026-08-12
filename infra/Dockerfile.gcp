@@ -1,7 +1,17 @@
-# One image, two entrypoints: the agent runs as a Cloud Run service, the
-# coordinator as a Cloud Run job. Their dependency sets overlap almost
-# entirely, and a single image means the deployed coordinator is provably the
-# same code as the deployed agent.
+# FALLBACK, not the default path. GCP now deploys from source -- see Procfile
+# and infra/deploy_gcp.sh -- and this file exists for the day the buildpack
+# cannot express something. It is deliberately NOT at the repo root: `gcloud
+# run deploy --source` prefers a root Dockerfile when it finds one, so leaving
+# it there turned every containerless deploy back into a container build of the
+# GCP researcher, whatever was being deployed.
+#
+# To use it:  gcloud builds submit --config=- ...  or docker build -f this .
+# with the repo root as the build context.
+#
+# One image, several entrypoints: the researcher runs as a Cloud Run service,
+# the master as another, the coordinator and matrix as jobs. Their dependency
+# sets overlap almost entirely, and a single image means the deployed
+# coordinator is provably the same code as the deployed agent.
 FROM python:3.13-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -48,6 +58,6 @@ RUN pip install --no-deps -e .
 # message that says nothing about the bind address.
 ENV HOST=0.0.0.0 \
     PORT=8080 \
-    CURRENCY_MODEL_MODE=direct
+    RESEARCH_MODEL_MODE=direct
 
 CMD ["python", "-m", "agents.gcp.server"]

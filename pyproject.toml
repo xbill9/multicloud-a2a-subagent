@@ -22,6 +22,9 @@ research-report = "evaluations.report:main"
 # Each cloud's stack is optional so a single agent can be run, and a single
 # matrix row filled, without installing all three vendors' SDKs.
 gcp = ["google-adk", "a2a-sdk"]
+# The master service: front end, fan-out and judge. `llm` judging additionally
+# needs the `gcp` extra, because the judge model is reached through ADK.
+master = ["starlette", "uvicorn", "a2a-sdk"]
 # botocore[crt] is not optional despite reading like it: strands' Bedrock model
 # resolves credentials through botocore's login provider, which raises
 # MissingDependencyException without the CRT extra. Found 2026-08-02 on a clean
