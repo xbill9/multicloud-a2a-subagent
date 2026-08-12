@@ -22,10 +22,10 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REGION="${AWS_REGION:-us-west-2}"
-RUNTIME="${RUNTIME:-currency_aws}"
-ECR_REPO="${ECR_REPO:-currency-mesh}"
-ROLE_EXEC="${ROLE_EXEC:-currency-aws-agentcore-exec}"
-ROLE_FEDERATED="${ROLE_FEDERATED:-currency-aws-federated}"
+RUNTIME="${RUNTIME:-research_aws}"
+ECR_REPO="${ECR_REPO:-research-mesh}"
+ROLE_EXEC="${ROLE_EXEC:-research-aws-agentcore-exec}"
+ROLE_FEDERATED="${ROLE_FEDERATED:-research-aws-federated}"
 # Overridable so the script works before a fresh login picks up the docker
 # group: DOCKER="sudo -u $USER -g docker docker" ./infra/deploy_aws.sh deploy
 DOCKER="${DOCKER:-docker}"
@@ -49,7 +49,7 @@ BEDROCK_MODEL_BASE="${BEDROCK_MODEL_BASE:-${BEDROCK_MODEL_ID#us.}}"
 MODEL_MODE="${MODEL_MODE:-direct}"
 
 GCP_PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
-MASTER_SA="${COORDINATOR_SA:-currency-coordinator@${GCP_PROJECT}.iam.gserviceaccount.com}"
+MASTER_SA="${COORDINATOR_SA:-research-coordinator@${GCP_PROJECT}.iam.gserviceaccount.com}"
 
 account_id() { aws sts get-caller-identity --query Account --output text; }
 
@@ -322,7 +322,7 @@ ensure_federated_role() {
   # *action* and a too-narrow *resource* produce the same 403, with data-plane
   # denials absent from CloudTrail by default to make it near-invisible.
   aws iam put-role-policy --role-name "$ROLE_FEDERATED" \
-    --policy-name invoke-currency-agent \
+    --policy-name invoke-research-agent \
     --policy-document "{
       \"Version\": \"2012-10-17\",
       \"Statement\": [{
@@ -479,7 +479,7 @@ scope_test() {
   echo
   echo "The deployed policy, live:"
   aws iam get-role-policy --role-name "$ROLE_FEDERATED" \
-    --policy-name invoke-currency-agent \
+    --policy-name invoke-research-agent \
     --query 'PolicyDocument.Statement[0].{Action:Action,Resource:Resource}' \
     --output json 2>/dev/null | sed 's/^/  /'
   echo
@@ -496,7 +496,7 @@ destroy() {
     aws bedrock-agentcore-control delete-agent-runtime --region "$REGION" \
       --agent-runtime-id "$(basename "$arn")" >/dev/null 2>&1 || true
   fi
-  aws iam delete-role-policy --role-name "$ROLE_FEDERATED" --policy-name invoke-currency-agent 2>/dev/null || true
+  aws iam delete-role-policy --role-name "$ROLE_FEDERATED" --policy-name invoke-research-agent 2>/dev/null || true
   aws iam delete-role --role-name "$ROLE_FEDERATED" 2>/dev/null || true
   aws iam delete-role-policy --role-name "$ROLE_EXEC" --policy-name agentcore-runtime 2>/dev/null || true
   aws iam delete-role --role-name "$ROLE_EXEC" 2>/dev/null || true

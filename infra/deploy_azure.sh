@@ -30,11 +30,11 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCATION="${LOCATION:-westus2}"
-RG="${RG:-currency-mesh-rg}"
-ACR="${ACR_NAME:-currencymeshacr}"
-ENVIRONMENT="${ENVIRONMENT:-currency-mesh-env}"
-APP="${APP:-currency-azure}"
-APP_REG="${APP_REG:-currency-mesh-master}"
+RG="${RG:-research-mesh-rg}"
+ACR="${ACR_NAME:-researchmeshacr}"
+ENVIRONMENT="${ENVIRONMENT:-research-mesh-env}"
+APP="${APP:-research-azure}"
+APP_REG="${APP_REG:-research-mesh-master}"
 IMAGE_TAG="${IMAGE_TAG:-azure-agent}"
 DOCKER="${DOCKER:-docker}"
 
@@ -55,7 +55,7 @@ MIN_REPLICAS="${MIN_REPLICAS:-0}"
 MAX_REPLICAS="${MAX_REPLICAS:-2}"
 
 GCP_PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
-MASTER_SA="${COORDINATOR_SA:-currency-coordinator@${GCP_PROJECT}.iam.gserviceaccount.com}"
+MASTER_SA="${COORDINATOR_SA:-research-coordinator@${GCP_PROJECT}.iam.gserviceaccount.com}"
 
 app_url() {
   local fqdn
@@ -86,12 +86,12 @@ ensure_infra() {
 }
 
 build_and_push() {
-  local image="${ACR}.azurecr.io/currency-azure:${IMAGE_TAG}"
+  local image="${ACR}.azurecr.io/research-azure:${IMAGE_TAG}"
   # ACR build runs server-side: no local docker, no architecture guessing, and
   # it works on a machine that cannot build linux/amd64 natively.
   {
     az acr build --registry "$ACR" --resource-group "$RG" \
-      --image "currency-azure:${IMAGE_TAG}" \
+      --image "research-azure:${IMAGE_TAG}" \
       --file "$REPO/infra/Dockerfile.azure" "$REPO"
   } >&2
   echo "$image"
@@ -312,6 +312,12 @@ EOF
 FOUNDRY_ACCOUNT="${FOUNDRY_ACCOUNT:-currency-mesh-foundry}"
 FOUNDRY_PROJECT="${FOUNDRY_PROJECT:-currency-mesh-proj}"
 FOUNDRY_LOCATION="${FOUNDRY_LOCATION:-westus3}"
+# Deliberately NOT renamed with the rest of the namespace on 2026-08-12. This
+# names a Foundry *model deployment* that may already exist and that this
+# script only creates on demand; renaming it points `llm` mode at a deployment
+# that is not there, and `llm` mode has never run, so the rename would be an
+# untested edit to an untested path. Rename it on the day `llm` mode is first
+# deployed, and not before.
 FOUNDRY_DEPLOYMENT="${FOUNDRY_DEPLOYMENT:-currency-reasoning}"
 FOUNDRY_MODEL="${FOUNDRY_MODEL:-gpt-5-mini}"
 

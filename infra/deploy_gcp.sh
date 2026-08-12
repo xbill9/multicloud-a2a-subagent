@@ -38,17 +38,28 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-us-central1}"
-# The `currency-*` resource names are deliberately NOT renamed with the domain.
-# They are deployed identities, not labels: COORDINATOR_SA's numeric subject is
-# pinned in the AWS role's trust policy and in the Entra federated credential,
-# and renaming it means re-provisioning the federation on two other clouds. The
-# name is now wrong about what the mesh does, which is the cheaper of the two
-# problems and the one that can be fixed on a day when re-running
-# `deploy_aws.sh fic` and `deploy_azure.sh fic` is affordable.
-REPO_NAME="${REPO_NAME:-currency-mesh}"
-SERVICE="${SERVICE:-currency-gcp}"
-JOB="${JOB:-currency-coordinator}"
-MATRIX_JOB="${MATRIX_JOB:-currency-matrix}"
+# Renamed off `currency-*` on 2026-08-12, and the reason is isolation rather
+# than tidiness. `~/multicloud-adk-a2a-currency` -- the predecessor mesh --
+# declares the *same fourteen names* on all three clouds, so both repos were
+# deploying over each other: a `deploy` here silently replaced that project's
+# live AgentCore runtime and Container App with this one's code.
+#
+# The service account was the worst of it. `currency-coordinator@` backed three
+# different projects' services at once, and because its numeric subject is what
+# the AWS trust policy and the Entra FIC pin, all three shared one federated
+# identity -- any of them could assume the others' roles. A shared name is a
+# nuisance; a shared identity is a security boundary that does not exist.
+#
+# Renaming the SA is the expensive edit, because that subject is pinned on two
+# other clouds. It is nonetheless handled entirely by redeploying: both sibling
+# scripts read the number back out of `gcloud iam service-accounts describe` at
+# deploy time rather than keeping a copy. Re-run `deploy_aws.sh deploy` and
+# `deploy_azure.sh fic` after changing COORDINATOR_SA and the federation
+# follows.
+REPO_NAME="${REPO_NAME:-research-mesh}"
+SERVICE="${SERVICE:-research-gcp}"
+JOB="${JOB:-research-coordinator}"
+MATRIX_JOB="${MATRIX_JOB:-research-matrix}"
 # The master is new, so it gets a name that says what it does. The three above
 # do not, for the reason given further up: they are pinned identities.
 MASTER="${MASTER:-research-master}"
@@ -66,7 +77,7 @@ EVAL_MOUNT="/eval"
 # answered. Cloud Run's 300s default is enough until one cloud is merely slow
 # rather than down, at which point it turns a degraded run into a 504.
 MASTER_TIMEOUT="${MASTER_TIMEOUT:-900}"
-COORDINATOR_SA="${COORDINATOR_SA:-currency-coordinator@${PROJECT}.iam.gserviceaccount.com}"
+COORDINATOR_SA="${COORDINATOR_SA:-research-coordinator@${PROJECT}.iam.gserviceaccount.com}"
 #: No --cloud flag, so coordinator.cli defaults to all three participants.
 THREE_CLOUD_ARGS="-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture"
 
@@ -109,14 +120,55 @@ built_image() {
 # there silently built the wrong process. It lives at infra/Dockerfile.gcp now
 # and nothing in the default path reads it.
 build() {
+  # Created here rather than assumed. The previous version of this script
+  # inherited an SA that already existed because another project had made it,
+  # which is exactly how two deployments end up sharing one identity without
+  # anyone deciding to.
+  if ! gcloud iam service-accounts describe "$COORDINATOR_SA" --project "$PROJECT" >/dev/null 2>&1; then
+    gcloud iam service-accounts create "${COORDINATOR_SA%%@*}" \
+      --project "$PROJECT" \
+      --display-name "research mesh master" \
+      --description "Mints the OIDC tokens the three-cloud research mesh federates with"
+
+    # IAM is eventually consistent, and `create` returning is not the same as
+    # the principal being usable. Measured 2026-08-12: the very next call,
+    # granting the new SA objectUser on the audit bucket, failed with
+    #
+    #   HTTPError 400: Service account research-coordinator@... does not exist
+    #
+    # for a service account that plainly did. Poll until a *binding* would
+    # succeed rather than sleeping a guessed interval -- `describe` starts
+    # answering before other services will accept the principal, so waiting on
+    # describe alone reproduces the failure.
+    local waited=0
+    until gcloud iam service-accounts get-iam-policy "$COORDINATOR_SA" \
+            --project "$PROJECT" >/dev/null 2>&1 || [[ "$waited" -ge 60 ]]; do
+      sleep 5; waited=$((waited + 5))
+    done
+    echo "service account ${COORDINATOR_SA} ready after ${waited}s"
+    # Even then the grant below can lose the race, so it is retried rather than
+    # trusted. This is the whole cost of not reusing another project's SA.
+    sleep 10
+  fi
+
   gcloud storage buckets describe "gs://${EVAL_BUCKET}" --project "$PROJECT" >/dev/null 2>&1 || \
     gcloud storage buckets create "gs://${EVAL_BUCKET}" \
       --project "$PROJECT" --location "$REGION" --uniform-bucket-level-access
 
-  gcloud storage buckets add-iam-policy-binding "gs://${EVAL_BUCKET}" \
-    --project "$PROJECT" \
-    --member "serviceAccount:${COORDINATOR_SA}" \
-    --role roles/storage.objectUser --quiet >/dev/null
+  local attempt=1
+  until gcloud storage buckets add-iam-policy-binding "gs://${EVAL_BUCKET}" \
+          --project "$PROJECT" \
+          --member "serviceAccount:${COORDINATOR_SA}" \
+          --role roles/storage.objectUser --quiet >/dev/null 2>&1; do
+    if [[ "$attempt" -ge 12 ]]; then
+      echo "could not grant ${COORDINATOR_SA} objectUser on gs://${EVAL_BUCKET}" >&2
+      echo "after 12 attempts; the audit would silently not be written." >&2
+      exit 1
+    fi
+    echo "  bucket grant attempt ${attempt} failed (IAM propagation); retrying"
+    attempt=$((attempt + 1))
+    sleep 10
+  done
 
   # --no-allow-unauthenticated on the front end too. It is a page a person
   # opens, which is exactly the argument for making it public and exactly why
