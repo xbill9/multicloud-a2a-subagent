@@ -11,6 +11,50 @@ reading specifications. Run `python -m matrix.runner` to reproduce.
 > the deployed system they were taken from has not been rebuilt. See the status
 > table at the top of the README.
 
+## Finding: a buildpack image has no interpreter until its launcher runs (2026-08-12)
+
+Not an A2A finding — a deployment one, recorded here because it cost a deploy
+cycle and the error names the wrong subsystem.
+
+The GCP side is built once from source and deployed four times: the master
+runs the `Procfile`'s `web` process, and the researcher and the two jobs
+override the entrypoint to run something else out of the same image. The
+obvious override is what Cloud Run documents:
+
+```bash
+--command python --args="-m,agents.gcp.server"
+```
+
+It deploys cleanly and then fails the startup probe:
+
+```
+failed to resolve binary path: error finding executable "python" in PATH
+[/cnb/process /cnb/lifecycle /usr/local/sbin /usr/local/bin /usr/sbin
+ /usr/bin /sbin /bin]
+```
+
+A buildpack image keeps its interpreter and its installed packages in CNB
+layers, and `/cnb/lifecycle/launcher` is what puts them on `PATH` before it
+execs the process. Overriding the entrypoint *replaces the launcher*, so the
+override runs in an environment where the language the image was built for
+does not exist. Run the command through the launcher and the layer
+environment is applied first:
+
+```bash
+--command /cnb/lifecycle/launcher --args="python,-m,agents.gcp.server"
+```
+
+**Two things worth keeping.** Cloud Run reports this as *"the user-provided
+container failed to start and listen on the port defined by PORT=8080"*, which
+is the symptom of any startup crash and points at the one subsystem that was
+fine; the real message is in the revision's logs. And both Cloud Run *jobs*
+carried the same override — a job fails at execution rather than at deploy, so
+that copy would have surfaced days later and nowhere near its cause.
+
+This is the cost of containerless, stated plainly: a Dockerfile has one
+entrypoint mechanism and a buildpack image has two, one of which is invisible
+until you bypass it.
+
 ## Finding: ADK's `to_a2a()` delivers the same reply twice (2026-08-12)
 
 The first finding of the new domain, and the first one this project found by
