@@ -155,7 +155,12 @@ Relevant measured results:
   `max(legs) + ~1s` of coordinator fixed cost (container start, card fetches,
   credential mints), which no per-leg figure includes. Not the sum — but
   quoting max(legs) alone was wrong by 85% on the fastest of three warm runs.
-- Open question nobody has answered: on ADK → AgentCore, scoping
+- ~~Open question nobody has answered: on ADK → AgentCore, scoping
   `bedrock-agentcore:InvokeAgentRuntime` to `runtime/<id>` and `runtime/<id>/*`
-  was denied 403 on the agent-card fetch; only `Resource: "*"` worked. If this
-  repo deploys against AgentCore, that is unfinished business.
+  was denied 403 on the agent-card fetch; only `Resource: "*"` worked.~~
+  **Answered 2026-08-12.** The resource scope was never the problem: discovery
+  is a *separate action*, `bedrock-agentcore:GetAgentCard`. Grant both actions
+  and the ARN-scoped policy works — measured on a live run, no wildcard
+  resource. See `docs/INTEROP.md`. Generalise it rather than filing it: on all
+  three clouds discovery is privileged separately from invocation, which is why
+  the credential is attached to the httpx *client* and not to one request.

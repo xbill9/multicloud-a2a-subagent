@@ -11,6 +11,42 @@ reading specifications. Run `python -m matrix.runner` to reproduce.
 > the deployed system they were taken from has not been rebuilt. See the status
 > table at the top of the README.
 
+## Finding: AgentCore least privilege needs `GetAgentCard`, not `Resource: "*"` (2026-08-12)
+
+The predecessor series left this open: scoping
+`bedrock-agentcore:InvokeAgentRuntime` to `runtime/<id>` and `runtime/<id>/*`
+was denied 403 **on the agent-card fetch**, and only `Resource: "*"` worked.
+Carried into `CLAUDE.md` as unfinished business for whoever deployed against
+AgentCore next.
+
+Measured here on a live three-cloud run. This policy works — card fetch and
+invocation both 200, no wildcard resource anywhere:
+
+```json
+{
+  "Action": ["bedrock-agentcore:InvokeAgentRuntime",
+             "bedrock-agentcore:GetAgentCard"],
+  "Resource": ["arn:aws:bedrock-agentcore:us-west-2:...:runtime/currency_aws-Z3xfNz6IqZ",
+               "arn:aws:bedrock-agentcore:us-west-2:...:runtime/currency_aws-Z3xfNz6IqZ/*"]
+}
+```
+
+So the resource scope was never the problem. **Discovery is a separate action**
+— `GetAgentCard` — and a policy granting only `InvokeAgentRuntime` denies the
+card fetch however the resources are written. Widening to `Resource: "*"`
+appeared to fix it because a wildcard resource with the wrong action set still
+fails; what actually differed in the working case was something else in the
+policy. The honest limit on this claim: the predecessor's exact failing policy
+is in another repo and not in hand, so "the missing element was the action"
+is a strong inference from this measurement rather than a diff of the two.
+
+The general shape is one this project keeps meeting: **discovery is privileged
+separately from invocation on all three clouds**, and a credential that reaches
+the call but not the card produces a failure that surfaces nowhere near auth.
+That is why `clients/base.py` attaches the credential to the httpx *client*
+rather than to a single request, and why `coordinator/trace.py` files the card
+fetch under its own `discovery` phase.
+
 ## Finding: a buildpack image has no interpreter until its launcher runs (2026-08-12)
 
 Not an A2A finding — a deployment one, recorded here because it cost a deploy

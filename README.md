@@ -61,30 +61,36 @@ router.
 
 ## Status: read this before anything else
 
-**This is a refactor in progress, and none of the new design has been
-deployed.** The repo previously ran a currency-conversion mesh with median
-consensus; that version was deployed on all three clouds and measured
-(2026-08-07 to 2026-08-09). The research/judge/audit architecture above
-replaced it on 2026-08-12 and has only ever run locally.
+**Deployed on all three clouds and exercised together, 2026-08-12.** The
+research/judge/audit architecture replaced a currency-conversion mesh earlier
+the same day; the master, the front end, all three researcher agents and all
+three federation modes are live and have answered a brief end to end.
+
+What that does **not** mean, and the rest of this page is careful about: no
+model has written a draft here, deployed or otherwise. Every number below came
+from `direct`-brain agents returning canned text. The mesh is proven; the
+comparison it exists to make has not been run once.
 
 | | built | tested | run locally | deployed | measured |
 |---|---|---|---|---|---|
-| Master service — fan-out + judge over HTTP | yes | yes | yes | **no** | n/a |
-| Master service — front end page | yes | served, not rendered | served | **no** | n/a |
-| Containerless deploy (`Procfile`, source build) | yes | **cannot be** | n/a | **no** | n/a |
-| Three research agents, `direct` brain | yes | yes | yes | **no** | n/a |
+| Master service — fan-out + judge over HTTP | yes | yes | yes | **yes** | yes |
+| Master service — front end page | yes | served, not rendered | served | **yes** | **no** |
+| Containerless deploy (`Procfile`, source build) | yes | cannot be | n/a | **yes** | yes |
+| Trace + timeline (`coordinator/trace.py`) | yes | yes | yes | **yes** | yes |
+| Cross-cloud federation (`coordinator/auth.py`) | unchanged | yes | n/a | **yes** | **yes, 2026-08-12** |
+| Three research agents, `direct` brain | yes | yes | yes | **yes** | yes |
 | Three research agents, `llm` brain | yes | construction only | **no** | **no** | **no** |
-| Judge — deterministic rubric | yes | yes | yes | **no** | n/a |
+| Judge — deterministic rubric | yes | yes | yes | **yes** | yes |
 | Judge — model | yes | failure paths only | **no** | **no** | **no** |
-| Audit / report | yes | yes | yes (refusing) | **no** | **no** |
-| Cross-cloud federation (`coordinator/auth.py`) | unchanged | yes | n/a | **stale** | was, on the old code |
+| Audit / report | yes | yes | yes (refusing) | **yes** | **no** |
 
-Two rows deserve their wording. **"served, not rendered"**: the page is
-returned by the service and its script parses, and nobody has opened it in a
-browser — a page can do both of those and still lay out wrong. **"cannot be"**:
-no local test can tell you whether the Python buildpack starts
-`coordinator.service:app` from the `Procfile` on Cloud Run, and of everything
-listed here that is the single most likely thing to be broken on first deploy.
+**"served, not rendered"** is unchanged and still means what it says: the page
+is returned and its script parses, and nobody has opened it in a browser.
+
+The federation row is the one that moved furthest. It was "stale — previously
+demonstrated, not currently demonstrated" for a week. As of 2026-08-12 it is
+demonstrated again, on this code, with all three modes exercised in a single
+run from a deployed master. The timeline below is the evidence.
 
 "Stale" is the important row. The three federation paths are untouched and were
 proven end to end with negative controls under the currency mesh, but the code
@@ -342,11 +348,26 @@ python3 -m pytest tests/ -q     # 183 passed with the mesh up, 168 without
 
 ## Deployed
 
-**Nothing in this architecture is deployed yet.** The AWS and Azure scripts are
-carried over from the currency mesh with their environment variables renamed
-(`RESEARCH_MODEL_MODE`, `RESEARCH_COORDINATOR_CLOUD`) and have not been run
-since. `deploy_gcp.sh` is new work on top of them: it now deploys the master
-and it deploys from source.
+Deployed 2026-08-12, `us-central1`:
+
+```text
+master   https://research-master-wgcq55zbfq-uc.a.run.app     (private)
+gcp      https://currency-gcp-wgcq55zbfq-uc.a.run.app        (private)
+aws      bedrock-agentcore.us-west-2 / currency_aws-Z3xfNz6IqZ
+azure    currency-azure.happyforest-b163d62f.westus2.azurecontainerapps.io
+```
+
+The master is `--no-allow-unauthenticated`, so reaching it is a step:
+
+```bash
+./infra/deploy_gcp.sh open      # grants your account roles/run.invoker
+gcloud run services proxy research-master --region us-central1
+# then http://localhost:8080
+
+# or without a browser
+curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  https://research-master-wgcq55zbfq-uc.a.run.app/api/timeline
+```
 
 ```bash
 ./infra/deploy_aws.sh   deploy   # AgentCore Runtime + the federated role
@@ -373,6 +394,15 @@ jobs deploy *the image that build produced*, read back off the master by
 digest, so "the researcher runs the same code as the master" is a fact about
 the deployment rather than a claim about the repo.
 
+It also cost a deploy cycle to a defect no local test could have caught, which
+is the ground rule at the top of `CLAUDE.md` collecting again. A buildpack
+image keeps its interpreter in a CNB layer, so overriding the entrypoint —
+which is exactly how one build becomes four processes — replaces the launcher
+that puts Python on `PATH`, and the container dies with *"failed to start and
+listen on the port defined by PORT=8080"*, naming the one subsystem that was
+fine. Commands have to run through `/cnb/lifecycle/launcher`. Full finding in
+[`docs/INTEROP.md`](docs/INTEROP.md).
+
 **The front end is private.** `--no-allow-unauthenticated`, like everything
 else here, reached through `gcloud run services proxy`. It holds credentials
 for three clouds and is the only surface a person is meant to open, which is
@@ -395,6 +425,89 @@ of the two problems.
 `verify` is the part worth running twice, and it is now **overdue**: every leg
 is probed alone, because the mesh degrades on purpose and a run with one
 credential removed still reaches a verdict on the other two and exits 0.
+
+## Proving the calls happened
+
+`GET /api/timeline` renders one run's HTTP calls in wall-clock order as plain
+text. One curl, no browser, survives a paste into an issue. This is the first
+three-cloud run from the deployed master, 2026-08-12:
+
+```console
+run  2026-08-12T22:19:56+00:00  "how agent-to-agent protocols change multi-cloud architecture"
+     3 leg(s): gcp, aws, azure   elapsed 1910ms
+
+        at  leg      host                                         code     took    back
+  --------  ------ - -------------------------------------------- ---- -------- -------
+     +63ms  gcp    K metadata.google.internal/computeMetadata/v1/  200    151ms    816B  | ###
+     +83ms  aws    K metadata.google.internal/computeMetadata/v1/  200    132ms    780B  | ##
+    +140ms  azure  K metadata.google.internal/computeMetadata/v1/  200     52ms    792B  |  #
+    +214ms  azure  K login.microsoftonline.com/40482c55-d00d-4c6d  200    268ms   1.4kB  |   #####
+    +215ms  gcp    D currency-gcp-wgcq55zbfq-uc.a.run.app/.well-k  200     78ms    528B  |   #
+    +236ms  aws    K sts.us-west-2.amazonaws.com/                  200    265ms   1.8kB  |    #####
+    +294ms  gcp    I currency-gcp-wgcq55zbfq-uc.a.run.app/         200     21ms   3.0kB  |     #
+    +482ms  azure  D currency-azure.happyforest-b163d62f.westus2.  200   1355ms   1.1kB  |        ########################
+    +501ms  aws    I bedrock-agentcore.us-west-2.amazonaws.com/ru  200    597ms   1.3kB  |        ###########
+   +1100ms  aws    I bedrock-agentcore.us-west-2.amazonaws.com/ru  200    161ms       -  |                   ###
+   +1839ms  azure  I currency-azure.happyforest-b163d62f.westus2.  200     68ms   2.0kB  |                                #
+
+  K credential   D agent-card discovery   I A2A invocation
+
+  legs summed 3195ms, slowest leg 1766ms, run 1910ms
+  -> the legs overlapped: the run cost about the slowest, not the sum.
+```
+
+Read top to bottom, that is the whole system's claim in eleven lines, and none
+of it is asserted by the page:
+
+- **Three separate credential mints**, one per leg, each to a different
+  audience. The AWS leg then presents its Google token to `sts.us-west-2`, and
+  the Azure leg presents the same kind of token to `login.microsoftonline.com`.
+  Two federations, no stored secret, visible as hostnames rather than as a
+  claim next to a logo.
+- **The calls landed on three vendors' infrastructure.**
+  `bedrock-agentcore.us-west-2.amazonaws.com` is not a thing this page can
+  fake.
+- **The legs overlapped.** Summed spans 3195ms against a 1910ms run. This is
+  the project's headline latency claim and it is computed from the trace, not
+  printed unconditionally — with three fast local agents the same line reads
+  "too close to call at this scale".
+
+Sorted by wall clock rather than grouped by leg, deliberately: grouped by leg,
+three concurrent legs look exactly like three sequential ones.
+
+That run's verdict, 3/3 clouds:
+
+```text
+winner: gcp  [3/3 clouds, judge=rubric, blind]
+  1. gcp    13.3/25  direct  98w   319ms
+  2. aws    13.3/25  direct  98w  1220ms
+  3. azure  13.3/25  direct  98w  1819ms
+warning: winner is ahead by only 0.00 of 25 points; treat this as a tie
+```
+
+Three byte-identical canned drafts ranked by latency, and the run says so.
+**Not a model comparison** — see "Two brains".
+
+### The first deployed run caught a real problem
+
+The run before that one, ninety seconds earlier, is the better argument for
+the view. Both remote legs returned `200` and then this:
+
+```text
+aws failed:   provider: aws answered with 10 words, below the 25 needed to
+              count as a draft: 'I can only help with currency conversion...'
+azure failed: provider: azure answered with 10 words, below the 25 needed...
+```
+
+AgentCore and Container Apps were still running the **currency agents from
+2026-08-07** — the federation was fine and the code was a week stale, which no
+green local suite could have shown, because locally the agents are built from
+the working tree. Note the failure kind: `provider`, not `protocol`. That
+distinction was argued for in this README before it had ever fired, on the
+grounds that filing a declining agent as a protocol failure would turn
+"Bedrock refused" into "AgentCore broke A2A". It fired, and it was right.
+
+Both were redeployed from this repo; the timeline above is the run after.
 
 ## What carried over unchanged
 
@@ -424,17 +537,22 @@ matrix axes apply unchanged.
 
 ## Not done
 
-- **Nothing is deployed.** The whole table at the top of this file. The
-  buildpack path in particular has never been exercised: the `Procfile`
-  entrypoint, the `--command` override that turns the same image into the
-  researcher, the GCS volume mount, and reading the built image back off the
-  master by digest are four things that can only be found broken by running
-  `./infra/deploy_gcp.sh deploy`.
-- **Nobody has opened the front end in a browser.** It is served, its script
-  parses, and every field it reads is asserted in `tests/test_service.py`. That
-  is not the same as it looking right.
-- **No model has ever written a draft here.** `llm` mode is built on all three
-  clouds and has been constructed in a test; it has not answered a brief.
+- **No model has ever written a draft here, deployed or not.** Every number on
+  this page came from `direct`-brain agents returning canned text. `llm` mode
+  is built on all three clouds and has never answered a brief, so nothing here
+  compares Gemini, Bedrock and Foundry — it compares three transports.
+- **Nobody has opened the front end in a browser.** It is served by a deployed
+  service, its script parses, and every field it reads is asserted in
+  `tests/test_service.py`. That is not the same as it looking right.
+- **The deployed runs are single cold runs.** Two of them. The 1910ms elapsed
+  and the per-leg figures are one sample each with cold starts in them, not a
+  measurement; the predecessor series' 18.8–25.1s hosted-runtime numbers came
+  from warm repeats. Do not quote these as latencies.
+- **`verify` has not been re-run since the redeploy.** The negative controls —
+  each leg alone with its credential removed — passed on the currency mesh and
+  are the only thing that separates "this leg is authenticated" from "this leg
+  reports an auth mode". Until they run again, the `auth_modes` in a run are a
+  label. This is the most overdue item on the list.
 - **The model judge has never judged.** Its failure paths are covered — an
   unreadable verdict, a raising judge, a partial verdict that would drop a
   participant, a judge contradicting its own scores — and all four fall back to
