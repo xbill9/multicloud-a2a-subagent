@@ -177,6 +177,23 @@ async def research(request):
     return JSONResponse(json.loads(run.model_dump_json()))
 
 
+async def last_run(request):
+    """The most recent recorded run, read back out of the store.
+
+    Read from the store rather than cached in memory on purpose: the instance
+    that served a run is not the instance that will be asked about it, and a
+    report that only works while the container is warm is a report that fails
+    exactly when someone is trying to show it to somebody.
+    """
+    try:
+        runs = list(load_runs())
+    except OSError as exc:
+        return JSONResponse({"error": f"evaluation store unreadable: {exc}"}, status_code=503)
+    if not runs:
+        return JSONResponse({"error": "no run has been recorded yet"}, status_code=404)
+    return JSONResponse(json.loads(runs[-1][1].model_dump_json()))
+
+
 async def audit(request):
     try:
         text = render_audit(aggregate(list(load_runs())))
@@ -191,6 +208,7 @@ app = Starlette(
         Route("/health", health),
         Route("/api/health", health),
         Route("/api/research", research, methods=["POST"]),
+        Route("/api/last", last_run),
         Route("/api/audit", audit),
     ]
 )

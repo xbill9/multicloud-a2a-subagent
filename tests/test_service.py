@@ -272,6 +272,36 @@ def test_the_audit_is_readable_before_any_run_exists(client):
     assert client.get("/api/audit").status_code == 200
 
 
+def test_the_last_run_is_read_back_out_of_the_store(client):
+    """Not cached in memory: the instance that served a run is not the instance
+    that gets asked about it, and a report that only works while the container
+    is warm fails exactly when someone is trying to show it to somebody."""
+    client.post("/api/research", json=brief(questions=["who ships at scale?"]))
+
+    response = client.get("/api/last")
+
+    assert response.status_code == 200
+    run = response.json()
+    assert run["request"]["questions"] == ["who ships at scale?"]
+    assert run["verdict"]["winner"] in {"gcp", "aws", "azure"}
+
+
+def test_the_last_run_is_the_most_recent_one(client):
+    client.post("/api/research", json={"topic": "the first brief, chronologically"})
+    client.post("/api/research", json={"topic": "the second brief, chronologically"})
+
+    assert client.get("/api/last").json()["request"]["topic"] == (
+        "the second brief, chronologically"
+    )
+
+
+def test_asking_for_the_last_run_before_there_is_one_is_a_404(client):
+    response = client.get("/api/last")
+
+    assert response.status_code == 404
+    assert "error" in response.json()
+
+
 def test_the_request_model_is_the_one_the_cli_uses(client):
     """One validation path, not two.
 

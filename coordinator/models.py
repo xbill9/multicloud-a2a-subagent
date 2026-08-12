@@ -67,6 +67,38 @@ class ResearchRequest(BaseModel):
         return [value.strip() for value in values if value.strip()]
 
 
+class TraceStep(BaseModel):
+    """One HTTP round trip made on one leg's behalf.
+
+    The evidence layer. Everything else in this file is what the mesh
+    *concluded*; this is what it *did*, and the difference matters because the
+    interesting claims here are not about draft quality at all -- they are
+    "this call crossed a cloud boundary" and "this call was authenticated".
+    Both are invisible in a Draft, which looks identical whether it came from
+    Bedrock over SigV4 or from a canned string two lines away.
+
+    Deliberately never carries a token, a header or a response body. A trace
+    that must be redacted before it can be shown is a trace nobody shows.
+    """
+
+    #: "credential" (an identity provider), "discovery" (agent-card fetch) or
+    #: "invoke" (the A2A call itself). Enough to order a flow diagram without
+    #: parsing URLs at render time.
+    phase: str
+    #: Human-readable, written by the code that made the call -- e.g. the auth
+    #: boundary string, which already names the audience being asked for.
+    label: str
+    host: str
+    path: str = ""
+    method: str = "GET"
+    status: int | None = None
+    elapsed_ms: float = 0.0
+    ok: bool = True
+    #: Only on failure, and only the provider's own words. This is the field
+    #: the predecessor series kept discarding and kept paying for.
+    detail: str = ""
+
+
 class Draft(BaseModel):
     """One cloud's answer to the brief."""
 
@@ -165,6 +197,14 @@ class ResearchRun(BaseModel):
     auth_modes: dict[str, str] = Field(default_factory=dict)
     drafts: list[Draft] = Field(default_factory=list)
     failures: dict[str, str] = Field(default_factory=dict)
+    #: Participant name -> every HTTP round trip made on its behalf, in order.
+    #: Recorded for legs that failed as well as legs that answered, which is
+    #: the whole point: a leg with a 403 on the agent-card fetch and a leg that
+    #: was never dialled produce the same one-line failure string and very
+    #: different traces. Empty for in-process adapters, which is the honest
+    #: answer -- a canned draft crossed no network and must not be able to
+    #: render a flow diagram claiming it did.
+    traces: dict[str, list[TraceStep]] = Field(default_factory=dict)
     verdict: Verdict | None = None
     elapsed_ms: float = Field(ge=0)
 

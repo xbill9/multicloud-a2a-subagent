@@ -99,6 +99,35 @@ PAGE = """<!doctype html>
         font: 12.5px/1.6 ui-monospace, monospace; overflow-x: auto; margin: 10px 0 0; }
   .fail { color: var(--bad); font-size: 13px; margin-top: 8px;
           font-family: ui-monospace, monospace; }
+  .flow { display: flex; flex-direction: column; gap: 10px; }
+  .lane { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lane > .tag:first-child { min-width: 58px; text-align: center; }
+  .hop {
+    display: flex; align-items: baseline; gap: 8px; padding: 6px 10px;
+    border: 1px solid var(--line); border-left-width: 3px; border-radius: 5px;
+    font: 11.5px/1.35 ui-monospace, monospace; white-space: nowrap;
+  }
+  .hop.credential { border-left-color: var(--azure); }
+  .hop.discovery  { border-left-color: var(--gcp); }
+  .hop.invoke     { border-left-color: var(--good); }
+  .hop.err        { border-left-color: var(--bad); background: #1d1216; }
+  .hop b { font-weight: 600; color: var(--text); }
+  .hop i { font-style: normal; color: var(--dim); }
+  .arrow { color: var(--line); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 14px;
+            font-size: 11.5px; color: var(--dim); }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+            margin-right: 5px; vertical-align: baseline; }
+  table.cmp { width: 100%; border-collapse: collapse; margin-top: 12px;
+              font: 12.5px ui-monospace, monospace; }
+  table.cmp th, table.cmp td { text-align: right; padding: 6px 8px;
+                               border-bottom: 1px solid var(--line); }
+  table.cmp th:first-child, table.cmp td:first-child { text-align: left; color: var(--dim); }
+  table.cmp th { color: var(--dim); font-weight: 500; }
+  table.cmp td.best { color: var(--good); font-weight: 600; }
+  table.cmp tr.total td { border-bottom: 0; font-weight: 600; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .07em;
+       color: var(--dim); margin: 0 0 12px; font-weight: 600; }
   .tabs { display: flex; gap: 4px; margin-bottom: 18px; }
   .tabs button { margin: 0; background: transparent; color: var(--dim);
                  border: 1px solid var(--line); font-weight: 500; padding: 7px 15px; }
@@ -116,6 +145,7 @@ PAGE = """<!doctype html>
 
   <div class="tabs">
     <button class="on" data-tab="run">run a brief</button>
+    <button data-tab="last">last run</button>
     <button data-tab="audit">audit</button>
   </div>
 
@@ -162,6 +192,13 @@ PAGE = """<!doctype html>
     </div>
 
     <div id="result"></div>
+  </section>
+
+  <section id="tab-last" hidden>
+    <p class="sub">The most recent run read back out of the append-only store,
+       rendered exactly as it was live. This is the shareable one: it survives
+       the instance that produced it.</p>
+    <div id="last"></div>
   </section>
 
   <section id="tab-audit" hidden>
@@ -232,7 +269,7 @@ $('go').onclick = async () => {
   }
 };
 
-function render(run) {
+function render(run, into = 'result') {
   const drafts = Object.fromEntries((run.drafts || []).map(d => [d.source, d]));
   const verdict = run.verdict;
   const out = [];
@@ -283,6 +320,9 @@ function render(run) {
     </div>`);
   }
 
+  out.push(renderFlow(run));
+  out.push(renderComparison(run));
+
   const failures = Object.entries(run.failures || {});
   if (failures.length) {
     out.push(`<div class="panel">${failures.map(([name, why]) =>
@@ -295,18 +335,131 @@ function render(run) {
     Object.entries(run.auth_modes || {}).map(([k, v]) =>
       `<b>${esc(k)}</b> ${esc(v)}`).join(' &middot; ')}</p>`);
 
-  $('result').innerHTML = out.join('');
+  $(into).innerHTML = out.join('');
+}
+
+// The flow. Every HTTP round trip each leg actually made, in order, with the
+// host it was made to -- which is the whole evidence. "This is cross-cloud"
+// is not a claim the page should assert next to a logo; it is a hostname of
+// bedrock-agentcore.us-west-2.amazonaws.com sitting in the trace, or it is
+// nothing. The page deliberately does not editorialise beyond showing them.
+function renderFlow(run) {
+  const traces = run.traces || {};
+  const legs = (run.participants || []).filter(name => (traces[name] || []).length);
+  if (!legs.length) {
+    return `<div class="panel"><h2>agent flow</h2>
+      <p class="meta" style="margin:0">No network was crossed. These drafts came
+      from in-process adapters, so there is no flow to show &mdash; which is the
+      honest answer rather than an empty diagram.</p></div>`;
+  }
+
+  const hosts = new Set();
+  let hops = 0;
+  legs.forEach(name => (traces[name] || []).forEach(s => { hosts.add(s.host); hops++; }));
+
+  const lanes = legs.map(name => {
+    const steps = traces[name] || [];
+    const total = steps.reduce((sum, s) => sum + (s.elapsed_ms || 0), 0);
+    return `<div class="lane">
+      <span class="tag ${esc(name)}">${esc(name)}</span>
+      ${steps.map(s => `
+        <span class="hop ${esc(s.phase)}${s.ok ? '' : ' err'}"
+              title="${esc(s.method)} ${esc(s.host)}${esc(s.path)}${
+                s.detail ? ' — ' + esc(s.detail) : ''}">
+          <b>${esc(s.host)}</b>
+          <i>${esc(s.path)}</i>
+          <i>${s.status ?? '-'}</i>
+          <i>${Math.round(s.elapsed_ms)}ms</i>
+        </span>`).join('<span class="arrow">&rarr;</span>')}
+      <span class="peers">&Sigma; ${Math.round(total)}ms</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="panel">
+    <h2>agent flow</h2>
+    <div class="flow">${lanes}</div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--azure)"></span>credential
+        &mdash; an identity provider</span>
+      <span><span class="swatch" style="background:var(--gcp)"></span>discovery
+        &mdash; agent-card fetch</span>
+      <span><span class="swatch" style="background:var(--good)"></span>invoke
+        &mdash; the A2A call</span>
+    </div>
+    <p class="meta" style="margin-top:12px">${hops} round trip${hops === 1 ? '' : 's'}
+      across ${hosts.size} host${hosts.size === 1 ? '' : 's'}:
+      ${[...hosts].map(h => `<b>${esc(h)}</b>`).join(', ')}.
+      The legs ran concurrently, so elapsed tracks the slowest rather than the sum.</p>
+  </div>`;
+}
+
+// Content review. The per-cloud cards above show each draft against the rubric;
+// this shows them against *each other*, which is the only view in which "azure
+// scored 3.2 on specificity" means anything. Best-in-row is marked rather than
+// left to be eyeballed across columns.
+function renderComparison(run) {
+  const verdict = run.verdict;
+  if (!verdict || (verdict.verdicts || []).length < 2) return '';
+
+  const ranked = [...verdict.verdicts].sort((a, b) => a.rank - b.rank);
+  const drafts = Object.fromEntries((run.drafts || []).map(d => [d.source, d]));
+  const dims = (ranked[0].scores || []).map(s => s.dimension);
+
+  const row = (label, values, fmt = v => v, best = null) => {
+    const top = best === 'high' ? Math.max(...values)
+              : best === 'low'  ? Math.min(...values) : null;
+    return `<tr${label === 'total' ? ' class="total"' : ''}>
+      <td>${esc(label)}</td>
+      ${values.map(v => `<td class="${top !== null && v === top ? 'best' : ''}">${
+        fmt(v)}</td>`).join('')}
+    </tr>`;
+  };
+
+  return `<div class="panel">
+    <h2>content review</h2>
+    <table class="cmp">
+      <tr><th>dimension</th>${ranked.map(v =>
+        `<th>${esc(v.source)}</th>`).join('')}</tr>
+      ${dims.map(dim => row(
+        dim,
+        ranked.map(v => (v.scores.find(s => s.dimension === dim) || {}).score ?? 0),
+        v => v.toFixed(1),
+        'high',
+      )).join('')}
+      ${row('total', ranked.map(v => v.total), v => v.toFixed(1) + '/25', 'high')}
+      ${row('words', ranked.map(v => (drafts[v.source] || {}).word_count ?? 0), v => v + 'w')}
+      ${row('latency', ranked.map(v => (drafts[v.source] || {}).latency_ms ?? 0),
+        v => Math.round(v) + 'ms', 'low')}
+    </table>
+    <p class="meta" style="margin-top:12px">The rubric measures <b>form, not
+      truth</b> &mdash; headings, figures, citation markers, length. A confidently
+      wrong draft in tidy markdown outscores a hedged correct one and the rubric
+      cannot tell. Read this as a comparison of shape.</p>
+  </div>`;
 }
 
 document.querySelectorAll('.tabs button').forEach(btn => {
   btn.onclick = async () => {
     document.querySelectorAll('.tabs button').forEach(b =>
       b.classList.toggle('on', b === btn));
-    $('tab-run').hidden = btn.dataset.tab !== 'run';
-    $('tab-audit').hidden = btn.dataset.tab !== 'audit';
+    ['run', 'last', 'audit'].forEach(tab => {
+      $('tab-' + tab).hidden = btn.dataset.tab !== tab;
+    });
     if (btn.dataset.tab === 'audit') {
       try { $('audit').textContent = await (await fetch('api/audit')).text(); }
       catch (e) { $('audit').textContent = String(e); }
+    }
+    if (btn.dataset.tab === 'last') {
+      $('last').innerHTML = '<p class="sub">loading&hellip;</p>';
+      try {
+        const res = await fetch('api/last');
+        if (res.status === 404) {
+          $('last').innerHTML = `<div class="panel"><p class="meta"
+            style="margin:0">Nothing recorded yet. Send a brief.</p></div>`;
+          return;
+        }
+        render(await res.json(), 'last');
+      } catch (e) { $('last').innerHTML = `<p class="fail">${esc(e)}</p>`; }
     }
   };
 });

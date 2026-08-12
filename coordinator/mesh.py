@@ -14,9 +14,10 @@ leg -- which is why the per-participant timeout matters more than it looks.
 import asyncio
 from time import perf_counter
 
+from coordinator import trace
 from coordinator.errors import AdapterError, FailureKind
 from coordinator.judge import RubricJudge
-from coordinator.models import Draft, ResearchRequest, ResearchRun
+from coordinator.models import Draft, ResearchRequest, ResearchRun, TraceStep
 from coordinator.participants import Participant
 
 
@@ -37,9 +38,13 @@ class ResearchMesh:
     async def run(self, request: ResearchRequest) -> ResearchRun:
         started = perf_counter()
         failures: dict[str, str] = {}
+        traces: dict[str, list[TraceStep]] = {}
 
         gathered = await asyncio.gather(
-            *(self._call(participant, request, failures) for participant in self._participants)
+            *(
+                self._call(participant, request, failures, traces)
+                for participant in self._participants
+            )
         )
         drafts = [draft for draft in gathered if draft is not None]
 
@@ -53,6 +58,7 @@ class ResearchMesh:
             },
             drafts=drafts,
             failures=failures,
+            traces=traces,
             verdict=verdict,
             elapsed_ms=(perf_counter() - started) * 1000,
         )
@@ -62,16 +68,31 @@ class ResearchMesh:
         participant: Participant,
         request: ResearchRequest,
         failures: dict[str, str],
+        traces: dict[str, list[TraceStep]],
     ) -> Draft | None:
-        try:
-            async with asyncio.timeout(self._timeout_seconds):
-                return await participant.source.research(request)
-        except TimeoutError:
-            failures[participant.name] = AdapterError(
-                FailureKind.TIMEOUT, f"exceeded {self._timeout_seconds}s"
-            ).safe_message()
-        except AdapterError as exc:
-            failures[participant.name] = exc.safe_message()
-        except Exception as exc:  # noqa: BLE001 - adapter boundary converts SDK failures
-            failures[participant.name] = AdapterError(FailureKind.PROTOCOL, str(exc)).safe_message()
+        # The trace is opened here rather than inside the client stacks because
+        # this is the only scope that spans all three places a leg makes an
+        # HTTP call -- the credential mint, the card fetch, and the invocation
+        # -- and because a leg that *failed* has a trace worth keeping and no
+        # draft to hang it off. `asyncio.gather` gives each of these coroutines
+        # its own context copy, so three legs fill three traces with no locking.
+        with trace.collect() as leg:
+            try:
+                async with asyncio.timeout(self._timeout_seconds):
+                    return await participant.source.research(request)
+            except TimeoutError:
+                failures[participant.name] = AdapterError(
+                    FailureKind.TIMEOUT, f"exceeded {self._timeout_seconds}s"
+                ).safe_message()
+            except AdapterError as exc:
+                failures[participant.name] = exc.safe_message()
+            except Exception as exc:  # noqa: BLE001 - adapter boundary converts SDK failures
+                failures[participant.name] = AdapterError(
+                    FailureKind.PROTOCOL, str(exc)
+                ).safe_message()
+            finally:
+                # Recorded even on the success path's return, which is why this
+                # is a finally and not a line after the try.
+                if leg.steps:
+                    traces[participant.name] = leg.steps
         return None

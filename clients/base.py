@@ -13,6 +13,7 @@ from time import perf_counter
 
 import httpx
 
+from coordinator import trace
 from coordinator.errors import AdapterError, FailureKind
 from coordinator.models import Draft, ResearchRequest
 from protocol.research import build_prompt, parse_draft
@@ -130,7 +131,12 @@ class A2AResearchClient:
         have succeeded is the most misleading failure in this space -- it
         surfaces as a protocol or transport error, nowhere near auth.
         """
-        return httpx.AsyncClient(timeout=self._timeout_s, auth=self._auth, **kwargs)
+        return httpx.AsyncClient(
+            timeout=self._timeout_s,
+            auth=self._auth,
+            event_hooks=trace.EVENT_HOOKS,
+            **kwargs,
+        )
 
     async def _send(self, prompt: str) -> str:
         """Send one text message over A2A and return the concatenated reply."""

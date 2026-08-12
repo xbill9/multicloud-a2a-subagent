@@ -76,6 +76,13 @@ def _log_provider_response(boundary: str, response: httpx.Response) -> None:
     On failure the body is logged whole and unparsed. Truncating it is how you
     lose the one line that names the condition that did not match.
     """
+    # Recorded as well as logged, for the same reason the log line exists at
+    # all: a log is only an observable to whoever is reading the log. The
+    # report shows this to whoever is reading the result.
+    from coordinator import trace
+
+    trace.record_credential(boundary, response)
+
     if response.is_success:
         log.info("%s -> %s %s", boundary, response.status_code, response.reason_phrase)
         return

@@ -1,0 +1,164 @@
+"""Collect what each leg actually did on the wire, without threading it through.
+
+The problem this solves is structural. A leg's HTTP calls are made in three
+different places -- the credential mint inside ``coordinator.auth``, the
+agent-card fetch inside the vendor's SDK, the A2A call inside the same SDK --
+and none of them can see the others. Passing a collector down would mean
+changing the signature of every client stack and every auth adapter, and the
+SDKs in the middle would have to agree to carry it, which they will not.
+
+So the collector is a context variable. ``clients.base`` opens one per leg;
+the httpx event hooks and the auth boundary logger append to whatever is open.
+``asyncio.gather`` copies the context into each task, so three legs running
+concurrently write into three separate traces with no coordination and no
+locking. Nothing outside a ``collect()`` block records anything, which is why
+the hermetic tests and the in-process adapters produce empty traces rather
+than fictional ones.
+
+**Never record a credential.** No headers, no bodies on success, no query
+strings -- Google's metadata mint takes the audience as a query parameter and
+returns the token as the body, and a trace that has to be sanitised before it
+can be shown to anyone is a trace that will not be shown. The label carries
+whatever the calling code chose to name, which is already audience-level
+detail written by us rather than by a provider.
+"""
+
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from time import perf_counter
+
+import httpx
+
+from coordinator.models import TraceStep
+
+log = logging.getLogger("trace")
+
+#: Agent-card paths, per the A2A spec and ADK's older spelling. Matched on the
+#: path rather than guessed from ordering: the card fetch is not reliably the
+#: first request a stack makes, and a discovery step mislabelled as an
+#: invocation turns a 403 on discovery -- the single most misleading failure in
+#: this space -- back into the thing it took the predecessor series a day to
+#: tell apart.
+_CARD_PATHS = ("/.well-known/agent-card.json", "/.well-known/agent.json")
+
+
+class LegTrace:
+    """The steps recorded for one leg, plus the round trips still in flight."""
+
+    def __init__(self) -> None:
+        self.steps: list[TraceStep] = []
+        self._pending: dict[str, float] = {}
+
+    def start(self, request: httpx.Request) -> None:
+        self._pending[_key(request)] = perf_counter()
+
+    def finish(self, response: httpx.Response) -> None:
+        request = response.request
+        started = self._pending.pop(_key(request), None)
+        url = request.url
+        path = url.path or "/"
+        self.steps.append(
+            TraceStep(
+                phase="discovery" if path in _CARD_PATHS else "invoke",
+                label=f"{request.method} {path}",
+                host=url.host or "",
+                path=path,
+                method=request.method,
+                status=response.status_code,
+                elapsed_ms=(perf_counter() - started) * 1000 if started else 0.0,
+                ok=response.is_success,
+                # The body is deliberately not read here: an event hook runs
+                # before the response is streamed, and reading it would consume
+                # the stream the caller is about to parse. Failure bodies are
+                # already carried into the raised error by clients.base.
+                detail="" if response.is_success else response.reason_phrase,
+            )
+        )
+
+    def credential(self, boundary: str, response: httpx.Response) -> None:
+        """One identity-provider round trip, from an already-read response."""
+        url = response.request.url
+        self.steps.append(
+            TraceStep(
+                phase="credential",
+                label=boundary,
+                host=url.host or "",
+                path=url.path or "/",
+                method=response.request.method,
+                status=response.status_code,
+                elapsed_ms=_elapsed_ms(response),
+                ok=response.is_success,
+                detail="" if response.is_success else response.text[:400],
+            )
+        )
+
+
+def _key(request: httpx.Request) -> str:
+    return f"{request.method} {request.url}"
+
+
+def _elapsed_ms(response: httpx.Response) -> float:
+    """``response.elapsed``, or 0 if httpx will not give it to us yet.
+
+    It raises rather than returning None on an unread response, and a trace is
+    never worth an exception on a path that has just successfully minted a
+    credential.
+    """
+    try:
+        return response.elapsed.total_seconds() * 1000
+    except RuntimeError:
+        return 0.0
+
+
+_current: ContextVar[LegTrace | None] = ContextVar("current_leg_trace", default=None)
+
+
+@contextmanager
+def collect() -> Iterator[LegTrace]:
+    """Open a trace for one leg. Nested opens replace, they do not merge."""
+    leg = LegTrace()
+    token = _current.set(leg)
+    try:
+        yield leg
+    finally:
+        _current.reset(token)
+
+
+def current() -> LegTrace | None:
+    return _current.get()
+
+
+async def on_request(request: httpx.Request) -> None:
+    leg = _current.get()
+    if leg is not None:
+        leg.start(request)
+
+
+async def on_response(response: httpx.Response) -> None:
+    leg = _current.get()
+    if leg is not None:
+        leg.finish(response)
+
+
+def record_credential(boundary: str, response: httpx.Response) -> None:
+    leg = _current.get()
+    if leg is not None:
+        leg.credential(boundary, response)
+
+
+#: Attach to every ``httpx.AsyncClient`` the mesh builds. Hooks rather than a
+#: custom transport, because a transport would have to be composed with the
+#: SigV4 signing path and the ``local_address`` binding the a2a-sdk stack sets,
+#: and there is no reason for an observer to be in that position.
+EVENT_HOOKS = {"request": [on_request], "response": [on_response]}
+
+
+__all__ = [
+    "EVENT_HOOKS",
+    "LegTrace",
+    "collect",
+    "current",
+    "record_credential",
+]
