@@ -92,7 +92,18 @@ class TraceStep(BaseModel):
     path: str = ""
     method: str = "GET"
     status: int | None = None
+    #: Wall clock, when the request left. Carried alongside `elapsed_ms`
+    #: because the two answer different questions: elapsed says how long a hop
+    #: took, and this says *when it happened relative to the others*, which is
+    #: the only way to see that three legs really did run concurrently rather
+    #: than one after another. A per-leg duration cannot show that.
+    started_at: datetime | None = None
     elapsed_ms: float = 0.0
+    #: Response body size from `content-length`, or None when the provider did
+    #: not send one. Not measured by reading the body: an event hook runs
+    #: before the stream is consumed, and reading it there would take the
+    #: response away from the parser that is about to need it.
+    bytes: int | None = None
     ok: bool = True
     #: Only on failure, and only the provider's own words. This is the field
     #: the predecessor series kept discarding and kept paying for.
@@ -190,6 +201,10 @@ class ResearchRun(BaseModel):
     """Stable result envelope for one brief fanned out across the mesh."""
 
     request: ResearchRequest
+    #: When the fan-out began. The origin every trace step's offset is measured
+    #: from, so a timeline can be rendered from a stored run and not only from
+    #: the live response.
+    started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     participants: list[str] = Field(default_factory=list)
     #: Participant name -> auth mode actually used on that leg. Recorded in the
     #: run rather than inferred from config afterwards: "which legs were

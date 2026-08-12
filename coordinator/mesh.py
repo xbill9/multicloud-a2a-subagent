@@ -12,6 +12,7 @@ leg -- which is why the per-participant timeout matters more than it looks.
 """
 
 import asyncio
+from datetime import UTC, datetime
 from time import perf_counter
 
 from coordinator import trace
@@ -37,6 +38,11 @@ class ResearchMesh:
 
     async def run(self, request: ResearchRequest) -> ResearchRun:
         started = perf_counter()
+        # Stamped here rather than left to the model's default, which would
+        # fire when the run is *constructed* -- after every leg has finished.
+        # Every trace offset is measured from this, so a default would put the
+        # whole timeline in negative territory.
+        started_at = datetime.now(UTC)
         failures: dict[str, str] = {}
         traces: dict[str, list[TraceStep]] = {}
 
@@ -52,6 +58,7 @@ class ResearchMesh:
 
         return ResearchRun(
             request=request,
+            started_at=started_at,
             participants=[participant.name for participant in self._participants],
             auth_modes={
                 participant.name: participant.auth for participant in self._participants

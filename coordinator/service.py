@@ -48,6 +48,7 @@ from coordinator.judge import JUDGE_MODES, judge_mode, load_judge
 from coordinator.mesh import ResearchMesh
 from coordinator.models import ResearchRequest
 from coordinator.participants import CLOUD_ENDPOINTS, build_participants, endpoint_for
+from coordinator.timeline import render as render_timeline
 from evaluations.report import aggregate
 from evaluations.report import render as render_audit
 from evaluations.store import load as load_runs
@@ -194,6 +195,32 @@ async def last_run(request):
     return JSONResponse(json.loads(runs[-1][1].model_dump_json()))
 
 
+async def timeline(request):
+    """The last run's calls in wall-clock order, as plain text.
+
+    The simplest thing that proves the mesh is real: one request, no browser,
+    and it shows every call that was made, what came back and when. `?n=2`
+    walks back through the store for the run before it.
+    """
+    try:
+        runs = list(load_runs())
+    except OSError as exc:
+        return PlainTextResponse(f"evaluation store unreadable: {exc}", status_code=503)
+    if not runs:
+        return PlainTextResponse("no run has been recorded yet", status_code=404)
+
+    try:
+        index = max(1, int(request.query_params.get("n", "1")))
+    except ValueError:
+        return PlainTextResponse("n must be a positive integer", status_code=400)
+    if index > len(runs):
+        return PlainTextResponse(
+            f"only {len(runs)} run(s) recorded", status_code=404
+        )
+
+    return PlainTextResponse(render_timeline(runs[-index][1]))
+
+
 async def audit(request):
     try:
         text = render_audit(aggregate(list(load_runs())))
@@ -209,6 +236,7 @@ app = Starlette(
         Route("/api/health", health),
         Route("/api/research", research, methods=["POST"]),
         Route("/api/last", last_run),
+        Route("/api/timeline", timeline),
         Route("/api/audit", audit),
     ]
 )

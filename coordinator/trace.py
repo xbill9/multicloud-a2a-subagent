@@ -27,6 +27,7 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
 
 import httpx
@@ -49,10 +50,10 @@ class LegTrace:
 
     def __init__(self) -> None:
         self.steps: list[TraceStep] = []
-        self._pending: dict[str, float] = {}
+        self._pending: dict[str, tuple[float, datetime]] = {}
 
     def start(self, request: httpx.Request) -> None:
-        self._pending[_key(request)] = perf_counter()
+        self._pending[_key(request)] = (perf_counter(), datetime.now(UTC))
 
     def finish(self, response: httpx.Response) -> None:
         request = response.request
@@ -67,7 +68,9 @@ class LegTrace:
                 path=path,
                 method=request.method,
                 status=response.status_code,
-                elapsed_ms=(perf_counter() - started) * 1000 if started else 0.0,
+                started_at=started[1] if started else None,
+                elapsed_ms=(perf_counter() - started[0]) * 1000 if started else 0.0,
+                bytes=_content_length(response),
                 ok=response.is_success,
                 # The body is deliberately not read here: an event hook runs
                 # before the response is streamed, and reading it would consume
@@ -88,7 +91,9 @@ class LegTrace:
                 path=url.path or "/",
                 method=response.request.method,
                 status=response.status_code,
+                started_at=datetime.now(UTC) - timedelta(milliseconds=_elapsed_ms(response)),
                 elapsed_ms=_elapsed_ms(response),
+                bytes=_content_length(response),
                 ok=response.is_success,
                 detail="" if response.is_success else response.text[:400],
             )
@@ -97,6 +102,24 @@ class LegTrace:
 
 def _key(request: httpx.Request) -> str:
     return f"{request.method} {request.url}"
+
+
+def _content_length(response: httpx.Response) -> int | None:
+    """How much came back, from the header rather than from the body.
+
+    The body is off limits inside an event hook -- reading it consumes the
+    stream the caller is about to parse -- so this is what the provider
+    declared, and it is None when the provider declared nothing. Reported as
+    unknown rather than as zero: a chunked response with no content-length and
+    an empty response are very different answers to "what returned".
+    """
+    raw = response.headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
 def _elapsed_ms(response: httpx.Response) -> float:

@@ -155,15 +155,32 @@ deploy() {
   # rejects anything without a valid Google ID token whose audience is this
   # service's own URL.
   #
-  # Same image as the master, different entrypoint. The buildpack's entrypoint
-  # is the Procfile's `web` process, so the researcher is an override rather
-  # than a second build.
+  # Same image as the master, different entrypoint -- through the buildpack's
+  # launcher, which is the whole finding here.
+  #
+  # `--command python --args=-m,agents.gcp.server` deploys and then fails the
+  # startup probe with:
+  #
+  #   failed to resolve binary path: error finding executable "python" in PATH
+  #   [/cnb/process /cnb/lifecycle /usr/local/sbin /usr/local/bin /usr/sbin
+  #    /usr/bin /sbin /bin]
+  #
+  # A buildpack image keeps its interpreter and its installed packages in CNB
+  # layers, and it is `/cnb/lifecycle/launcher` that puts them on PATH before
+  # exec'ing the process. Overriding the entrypoint replaces the launcher, so
+  # the override runs in an environment where the language the image was built
+  # for does not exist. Run the command *through* the launcher instead and the
+  # layer environment is applied first.
+  #
+  # Measured 2026-08-12 on this project. Note the failure has nothing to do
+  # with ports despite what Cloud Run's error says -- "failed to start and
+  # listen on the port" is the symptom of any startup crash.
   gcloud run deploy "$SERVICE" \
     --image "$image" \
     --region "$REGION" --project "$PROJECT" \
     --no-allow-unauthenticated \
     --port 8080 \
-    --command python --args="-m,agents.gcp.server" \
+    --command /cnb/lifecycle/launcher --args="python,-m,agents.gcp.server" \
     --set-env-vars "RESEARCH_MODEL_MODE=${MODEL_MODE},HOST=0.0.0.0,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
     --min-instances 0 --max-instances 2 \
     --quiet
@@ -196,8 +213,8 @@ deploy() {
     --region "$REGION" --project "$PROJECT" \
     --service-account "$COORDINATOR_SA" \
     --set-env-vars "GCP_A2A_ENDPOINT=${url},GCP_A2A_AUTH=google-id-token,RESEARCH_COORDINATOR_CLOUD=gcp" \
-    --command python \
-    --args="-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture,--cloud,gcp" \
+    --command /cnb/lifecycle/launcher \
+    --args="python,-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture,--cloud,gcp" \
     --max-retries 0 --task-timeout 300s \
     --quiet
 }
@@ -311,8 +328,8 @@ matrix() {
     --region "$REGION" --project "$PROJECT" \
     --service-account "$COORDINATOR_SA" \
     --set-env-vars "^@^${vars}" \
-    --command python \
-    --args="-m,matrix.runner" \
+    --command /cnb/lifecycle/launcher \
+    --args="python,-m,matrix.runner" \
     --max-retries 0 --task-timeout 600s \
     --quiet >/dev/null
   gcloud run jobs execute "$MATRIX_JOB" \
