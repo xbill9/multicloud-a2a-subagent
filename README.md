@@ -92,11 +92,6 @@ demonstrated, not currently demonstrated" for a week. As of 2026-08-12 it is
 demonstrated again, on this code, with all three modes exercised in a single
 run from a deployed master. The timeline below is the evidence.
 
-"Stale" is the important row. The three federation paths are untouched and were
-proven end to end with negative controls under the currency mesh, but the code
-around them changed, and nothing has been redeployed since. Treat the keyless
-claim as **previously demonstrated, not currently demonstrated**.
-
 Nothing below is a model comparison. Every number on this page was produced by
 `direct`-brain agents returning canned text.
 
@@ -352,9 +347,13 @@ Deployed 2026-08-12, `us-central1`:
 
 ```text
 master   https://research-master-wgcq55zbfq-uc.a.run.app     (private)
-gcp      https://currency-gcp-wgcq55zbfq-uc.a.run.app        (private)
-aws      bedrock-agentcore.us-west-2 / currency_aws-Z3xfNz6IqZ
-azure    currency-azure.happyforest-b163d62f.westus2.azurecontainerapps.io
+gcp      https://research-gcp-wgcq55zbfq-uc.a.run.app         (private)
+aws      bedrock-agentcore.us-west-2 / research_aws-HP2I7RDeUm
+azure    research-azure.blackfield-af33f0df.westus2.azurecontainerapps.io
+
+identity research-coordinator@aisprint-491218.iam.gserviceaccount.com
+         sub 104950115965918306019 — pinned in the AWS trust policy and the
+         Entra FIC, and used by nothing else
 ```
 
 The master is `--no-allow-unauthenticated`, so reaching it is a step:
@@ -415,12 +414,46 @@ pinned to one instance — a GCS volume write is a whole-object rewrite, not an
 append, so two concurrent runs would lose one of themselves. `destroy` leaves
 the bucket behind deliberately.
 
-The `currency-*` cloud resource names are deliberately **not** renamed. They
-are deployed identities, not labels: the coordinator service account's numeric
-subject is pinned in the AWS role's trust policy and in the Entra federated
-credential, so renaming it means re-provisioning federation on two other
-clouds. The names are now wrong about what the mesh does, which is the cheaper
-of the two problems.
+### Why everything is `research-*` now
+
+This repo used to carry the predecessor mesh's `currency-*` resource names,
+with a note explaining that they were deployed identities rather than labels
+and so were not worth renaming. That note was wrong in a way that only showed
+up on deploying: **`~/multicloud-adk-a2a-currency` declares the same fourteen
+names on all three clouds.** Both repos were deploying over each other, and a
+`deploy` from here silently replaced that project's live AgentCore runtime and
+Container App with this project's agents. Nothing warned, because from either
+script's point of view the resource already existed.
+
+The service account was the serious half. `currency-coordinator@` backed three
+different projects' Cloud Run services at once, and its numeric subject is
+exactly what the AWS trust policy and the Entra FIC pin — so all three shared
+one federated identity, and any of them could assume the others' roles across
+clouds. A shared name is a nuisance. A shared identity is a security boundary
+that does not exist.
+
+Renaming the SA is the expensive edit, since that subject is pinned on two
+other clouds, but it needs no manual policy surgery: both sibling scripts read
+the number back out of `gcloud iam service-accounts describe` at deploy time
+rather than keeping a copy, so re-running `deploy_aws.sh deploy` and
+`deploy_azure.sh fic` is sufficient.
+
+`deploy_gcp.sh` now **creates** the service account rather than assuming it.
+The old version inherited one that existed because another project had made
+it, which is exactly how two deployments come to share an identity without
+anyone deciding to. Creating it surfaced an IAM propagation race — the grant
+immediately after `create` fails with *"Service account … does not exist"* for
+one that plainly does — so the wait polls until a binding would succeed rather
+than sleeping a guessed interval.
+
+One thing is deliberately still `currency-*`: `FOUNDRY_DEPLOYMENT` names a
+Foundry model deployment that may already exist and is only reached by `llm`
+mode, which has never run. Renaming it would be an untested edit to an
+untested path.
+
+The old `currency-*` resources are left alone. They belong to the other
+project, and they are currently running this project's code until it
+redeploys.
 
 `verify` is the part worth running twice, and it is now **overdue**: every leg
 is probed alone, because the mesh degrades on purpose and a run with one
@@ -433,26 +466,26 @@ text. One curl, no browser, survives a paste into an issue. This is the first
 three-cloud run from the deployed master, 2026-08-12:
 
 ```console
-run  2026-08-12T22:19:56+00:00  "how agent-to-agent protocols change multi-cloud architecture"
-     3 leg(s): gcp, aws, azure   elapsed 1910ms
+run  2026-08-12T23:11:25+00:00  "how agent-to-agent protocols change multi-cloud architecture"
+     3 leg(s): gcp, aws, azure   elapsed 6700ms
 
         at  leg      host                                         code     took    back
   --------  ------ - -------------------------------------------- ---- -------- -------
-     +63ms  gcp    K metadata.google.internal/computeMetadata/v1/  200    151ms    816B  | ###
-     +83ms  aws    K metadata.google.internal/computeMetadata/v1/  200    132ms    780B  | ##
-    +140ms  azure  K metadata.google.internal/computeMetadata/v1/  200     52ms    792B  |  #
-    +214ms  azure  K login.microsoftonline.com/40482c55-d00d-4c6d  200    268ms   1.4kB  |   #####
-    +215ms  gcp    D currency-gcp-wgcq55zbfq-uc.a.run.app/.well-k  200     78ms    528B  |   #
-    +236ms  aws    K sts.us-west-2.amazonaws.com/                  200    265ms   1.8kB  |    #####
-    +294ms  gcp    I currency-gcp-wgcq55zbfq-uc.a.run.app/         200     21ms   3.0kB  |     #
-    +482ms  azure  D currency-azure.happyforest-b163d62f.westus2.  200   1355ms   1.1kB  |        ########################
-    +501ms  aws    I bedrock-agentcore.us-west-2.amazonaws.com/ru  200    597ms   1.3kB  |        ###########
-   +1100ms  aws    I bedrock-agentcore.us-west-2.amazonaws.com/ru  200    161ms       -  |                   ###
-   +1839ms  azure  I currency-azure.happyforest-b163d62f.westus2.  200     68ms   2.0kB  |                                #
+    +637ms  gcp    K metadata.google.internal/computeMetadata/v1/  200    154ms    816B  |   #
+    +715ms  aws    K metadata.google.internal/computeMetadata/v1/  200    120ms    780B  |   #
+    +765ms  azure  K metadata.google.internal/computeMetadata/v1/  200     33ms    792B  |   #
+    +792ms  gcp    D research-gcp-wgcq55zbfq-uc.a.run.app/.well-k  200   5849ms    528B  |    ##############################
+    +834ms  azure  K login.microsoftonline.com/40482c55-d00d-4c6d  200    208ms   1.4kB  |    #
+    +860ms  aws    K sts.us-west-2.amazonaws.com/                  200    221ms   1.8kB  |    #
+   +1042ms  azure  D research-azure.blackfield-af33f0df.westus2.a  200   1545ms   1.1kB  |     ########
+   +1082ms  aws    I bedrock-agentcore.us-west-2.amazonaws.com/ru  200    666ms   1.3kB  |     ###
+   +1749ms  aws    I bedrock-agentcore.us-west-2.amazonaws.com/ru  200    164ms       -  |        #
+   +2588ms  azure  I research-azure.blackfield-af33f0df.westus2.a  200     65ms   2.0kB  |             #
+   +6643ms  gcp    I research-gcp-wgcq55zbfq-uc.a.run.app/         200     55ms   3.0kB  |                                 #
 
   K credential   D agent-card discovery   I A2A invocation
 
-  legs summed 3195ms, slowest leg 1766ms, run 1910ms
+  legs summed 9148ms, slowest leg 6060ms, run 6700ms
   -> the legs overlapped: the run cost about the slowest, not the sum.
 ```
 
@@ -467,10 +500,15 @@ of it is asserted by the page:
 - **The calls landed on three vendors' infrastructure.**
   `bedrock-agentcore.us-west-2.amazonaws.com` is not a thing this page can
   fake.
-- **The legs overlapped.** Summed spans 3195ms against a 1910ms run. This is
+- **The legs overlapped.** Summed spans 9148ms against a 6700ms run. This is
   the project's headline latency claim and it is computed from the trace, not
   printed unconditionally — with three fast local agents the same line reads
   "too close to call at this scale".
+- **A cold start is visible as a cold start.** The 5849ms is `research-gcp`'s
+  *agent-card fetch* on a scale-to-zero service that had existed for four
+  minutes — not the model, not the protocol, not the distance. Its actual
+  invocation, once warm, took 55ms. A single elapsed figure would have
+  recorded this run as "GCP is slow".
 
 Sorted by wall clock rather than grouped by leg, deliberately: grouped by leg,
 three concurrent legs look exactly like three sequential ones.
@@ -478,10 +516,10 @@ three concurrent legs look exactly like three sequential ones.
 That run's verdict, 3/3 clouds:
 
 ```text
-winner: gcp  [3/3 clouds, judge=rubric, blind]
-  1. gcp    13.3/25  direct  98w   319ms
-  2. aws    13.3/25  direct  98w  1220ms
-  3. azure  13.3/25  direct  98w  1819ms
+winner: aws  [3/3 clouds, judge=rubric, blind]
+  1. aws    13.3/25  direct  98w  1267ms
+  2. azure  13.3/25  direct  98w  1955ms
+  3. gcp    13.3/25  direct  98w  6699ms
 warning: winner is ahead by only 0.00 of 25 points; treat this as a tie
 ```
 
@@ -544,10 +582,12 @@ matrix axes apply unchanged.
 - **Nobody has opened the front end in a browser.** It is served by a deployed
   service, its script parses, and every field it reads is asserted in
   `tests/test_service.py`. That is not the same as it looking right.
-- **The deployed runs are single cold runs.** Two of them. The 1910ms elapsed
-  and the per-leg figures are one sample each with cold starts in them, not a
-  measurement; the predecessor series' 18.8–25.1s hosted-runtime numbers came
-  from warm repeats. Do not quote these as latencies.
+- **The deployed runs are single cold runs.** The 6700ms elapsed and every
+  per-leg figure is one sample with cold starts in it, not a measurement — the
+  winner changed between two runs of identical canned text purely on scheduling
+  noise, which is the clearest possible demonstration that these are not
+  latencies. The predecessor series' 18.8–25.1s hosted-runtime numbers came
+  from warm repeats. Do not quote these.
 - **`verify` has not been re-run since the redeploy.** The negative controls —
   each leg alone with its credential removed — passed on the currency mesh and
   are the only thing that separates "this leg is authenticated" from "this leg
