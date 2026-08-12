@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multicloud-a2a-research"
+version = "0.2.0"
+description = "Three native research agents on three clouds, synchronised over A2A, with a judge and a per-model audit"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "pydantic",
+  "httpx",
+]
+
+[project.scripts]
+research-mesh = "coordinator.cli:main"
+research-matrix = "matrix.runner:main"
+research-report = "evaluations.report:main"
+
+[project.optional-dependencies]
+# Each cloud's stack is optional so a single agent can be run, and a single
+# matrix row filled, without installing all three vendors' SDKs.
+gcp = ["google-adk", "a2a-sdk"]
+# botocore[crt] is not optional despite reading like it: strands' Bedrock model
+# resolves credentials through botocore's login provider, which raises
+# MissingDependencyException without the CRT extra. Found 2026-08-02 on a clean
+# install -- neither strands-agents nor bedrock-agentcore declares it.
+aws = ["strands-agents", "bedrock-agentcore", "a2a-sdk", "botocore[crt]"]
+azure = ["agent-framework-core", "agent-framework-a2a", "agent-framework-foundry"]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "ruff",
+]
+
+[tool.setuptools.packages.find]
+include = ["coordinator*", "protocol*", "clients*", "agents*", "matrix*", "evaluations*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
