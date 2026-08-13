@@ -120,7 +120,20 @@ MASTER_TIMEOUT="${MASTER_TIMEOUT:-900}"
 RESEARCH_TIMEOUT_SECONDS="${RESEARCH_TIMEOUT_SECONDS:-300}"
 COORDINATOR_SA="${COORDINATOR_SA:-research-coordinator@${PROJECT}.iam.gserviceaccount.com}"
 #: No --cloud flag, so coordinator.cli defaults to all three participants.
-THREE_CLOUD_ARGS="-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture"
+# `python` first, and it is not decoration. The command is
+# /cnb/lifecycle/launcher, which execs its arguments *after* putting the
+# buildpack layers on PATH -- so argv[0] has to be the interpreter. Without it
+# the container runs `-m` as a program and exits 127 with
+# `-m: line 1: -m: command not found`.
+#
+# This was missing here and in `probe` from 2026-08-12, when the researcher and
+# matrix deploys were fixed for the launcher and these two were not. The
+# consequence is worse than a broken command: `verify` reads a *non-zero exit*
+# as a denial, so every negative control passed -- reporting that a leg with its
+# credential removed was correctly refused, when in fact no container ever
+# started. A control that cannot run is indistinguishable from a control that
+# passed, and this one had been reporting success since the day it broke.
+THREE_CLOUD_ARGS="python,-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture"
 
 # `direct` stays the default, for the reason in docs/DEPLOYMENT_PLAN.md: the
 # matrix is a protocol instrument, and a model in the path makes a red cell
@@ -506,8 +519,21 @@ probe() {
   echo "--- ${label}"
   gcloud run jobs execute "$CONTROLS_JOB" \
     --region "$REGION" --project "$PROJECT" --wait --quiet \
-    --args="-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture,--cloud,${cloud}" \
+    --args="python,-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture,--cloud,${cloud}" \
     ${1+--update-env-vars "$*"} >/dev/null 2>&1 || rc=$?
+
+  # A control that could not run is not a control that passed. 126 and 127 are
+  # the shell's "cannot execute" and "not found", which is what a broken
+  # entrypoint produces -- and a `deny` probe reads any non-zero exit as the
+  # denial it was hoping for. That is how this harness spent a day reporting
+  # that every negative control passed while no container had started at all.
+  # Checked before the expectation, so it cannot be absorbed by either branch.
+  if [[ "$rc" -eq 126 || "$rc" -eq 127 ]]; then
+    echo "    exit ${rc} -- THE CONTROL DID NOT RUN. The container could not
+    start, so this probe proves nothing either way. Fix the harness before
+    reading any result below."
+    return
+  fi
 
   if [[ "$expect" == "deny" ]]; then
     [[ "$rc" -ne 0 ]] \
