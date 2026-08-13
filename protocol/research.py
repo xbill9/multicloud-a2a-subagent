@@ -24,8 +24,8 @@ and whether a model answered at all.
 import re
 from datetime import datetime
 
-from coordinator.errors import AdapterError, FailureKind
-from coordinator.models import Draft, ResearchRequest
+from protocol.errors import AdapterError, FailureKind
+from protocol.models import Draft, ResearchRequest
 
 #: A reply shorter than this is not a draft. It is almost always a refusal, a
 #: safety response, or a model answering the meta-question ("Sure, I can write

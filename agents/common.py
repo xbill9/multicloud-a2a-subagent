@@ -24,7 +24,7 @@ aggregate anything but `llm`.
 import logging
 import os
 
-from coordinator.models import ResearchRequest
+from protocol.models import ResearchRequest
 from protocol.research import parse_brief, render_draft
 
 #: The A2A card name every cloud advertises. Deliberately the same on all

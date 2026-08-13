@@ -25,7 +25,7 @@ WORKDIR /app
 # agent-framework-foundry and azure-identity are what `llm` mode needs, and
 # they are separate distributions from agent-framework-core -- omitting them
 # meant the deployed agent could serve `direct` and nothing else, while
-# CURRENCY_MODEL_MODE=llm was accepted and then failed on import. They are
+# RESEARCH_MODEL_MODE=llm was accepted and then failed on import. They are
 # small and pure-Python, so they are installed unconditionally rather than
 # creating a second image variant that only one mode can use.
 RUN pip install \
@@ -38,10 +38,20 @@ RUN pip install \
       httpx \
       uvicorn
 
+# A researcher, and only a researcher. It answers a brief with this cloud's own
+# model and returns markdown over A2A; it does not call anyone, judge anything,
+# or mint a credential for a third cloud.
+#
+# `coordinator` and `clients` were copied here until 2026-08-13, which put the
+# judge, the master service, the front end and the three-cloud credential
+# adapter on this vendor's infrastructure. `clients` was never imported at all.
+# `coordinator` was, by a single line -- agents/common.py took `ResearchRequest`
+# from `coordinator.models` -- and one import is all it takes: the whole package
+# has to be present for the container to start. The two types that cross the
+# wire live in `protocol` now, so this image carries the agent and the protocol
+# and nothing else.
 COPY pyproject.toml README.md ./
 COPY agents ./agents
-COPY clients ./clients
-COPY coordinator ./coordinator
 COPY protocol ./protocol
 
 RUN pip install --no-deps -e .
@@ -51,7 +61,7 @@ RUN pip install --no-deps -e .
 # only reproduces once bind and dial addresses differ.
 ENV HOST=0.0.0.0 \
     PORT=8080 \
-    CURRENCY_MODEL_MODE=direct
+    RESEARCH_MODEL_MODE=direct
 
 EXPOSE 8080
 CMD ["python", "-m", "agents.azure.server"]

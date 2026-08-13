@@ -1,19 +1,12 @@
-from enum import StrEnum
+"""The failure taxonomy, re-exported.
 
+It moved to ``protocol.errors`` so a researcher agent can raise and classify
+failures without importing the coordinator -- see ``protocol/models.py`` for
+why that mattered. Re-exported here because ``coordinator.errors`` is what
+every module on this side already says, and rewriting forty import lines to
+prove a point about packaging is churn, not clarity.
+"""
 
-class FailureKind(StrEnum):
-    VALIDATION = "validation"
-    PROVIDER = "provider"
-    AUTHENTICATION = "authentication"
-    TRANSPORT = "transport"
-    TIMEOUT = "timeout"
-    PROTOCOL = "protocol"
+from protocol.errors import AdapterError, FailureKind
 
-
-class AdapterError(RuntimeError):
-    def __init__(self, kind: FailureKind, message: str) -> None:
-        super().__init__(message)
-        self.kind = kind
-
-    def safe_message(self) -> str:
-        return f"{self.kind.value}: {self}"
+__all__ = ["AdapterError", "FailureKind"]
