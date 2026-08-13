@@ -6,20 +6,38 @@
 #   ./infra/deploy_gcp.sh deploy    # master + judge + front end, and the GCP researcher
 #   ./infra/deploy_gcp.sh wire      # fold the AWS and Azure legs into both
 #   ./infra/deploy_gcp.sh open      # grant yourself access, print the proxy command
-#   ./infra/deploy_gcp.sh run       # execute the coordinator job, tail its log
+#   ./infra/deploy_gcp.sh run       # POST a brief to the master, print the timeline
 #   ./infra/deploy_gcp.sh matrix    # deploy + run the 3x3 matrix, all servers
 #   ./infra/deploy_gcp.sh verify    # negative controls -- run these
 #   ./infra/deploy_gcp.sh url
 #   ./infra/deploy_gcp.sh destroy
 #
-# Four processes come out of one build, in dependency order:
+# **Everything that serves is a Cloud Run service.** A deploy creates two, and
+# no jobs:
 #
-#   MASTER  Cloud Run service  front end + fan-out + judge   <- the front door
-#   SERVICE Cloud Run service  the GCP researcher agent      <- one of three peers
-#   JOB     Cloud Run job      the same run, unattended      <- for scheduled runs
-#   MATRIX  Cloud Run job      the 3x3 interop grid
+#   MASTER  service  front end + fan-out + judge   <- the front door
+#   SERVICE service  the GCP researcher agent      <- one of three peers
 #
-# Only the master is built from source; the other three deploy the *image that
+# That is not a style preference. An agent holds an address, answers requests
+# and scales to zero between them; a job has no address and cannot be reached
+# over A2A at all, so a mesh member deployed as a job is not a mesh member. The
+# master is the coordinator, and it is a service for the same reason -- a
+# person with a question needs somewhere to send it.
+#
+# Two jobs exist, and neither is created by a deploy. Both are harnesses, and
+# both are named for it:
+#
+#   CONTROLS_JOB  job  the negative controls   <- created on demand by `verify`
+#   MATRIX_JOB    job  the 3x3 interop grid    <- created on demand by `matrix`
+#
+# A job earns its place in exactly one situation, which is these two: a
+# per-execution environment override plus an exit code to assert on. A negative
+# control has to run the coordinator with one credential removed and prove it
+# failed, and a service cannot vary its environment per request without a
+# redeploy -- at which point the control no longer tests the configuration
+# everything else runs.
+#
+# Only the master is built from source; everything else deploys the *image that
 # build produced*, read back off the master. One build, one digest, so "the
 # researcher runs the same code as the master" is a fact about the deployment
 # rather than a claim about the repo.
@@ -61,17 +79,16 @@ REPO_NAME="${REPO_NAME:-research-mesh}"
 # matching `research_aws` on AgentCore and `research-azure` on Container Apps:
 # across the mesh the cloud is what distinguishes one researcher from another.
 SERVICE="${SERVICE:-research-gcp}"
-# Renamed from `research-coordinator` on 2026-08-13. Two deployed things named
-# for the same role is worse than either name being wrong: `gcloud run jobs
-# list` showed `research-coordinator` and `gcloud run services list` showed
-# `research-master`, and nothing on either page said which one was the front
-# door. This is the headless, scheduled, recorded run -- `coordinator.cli`,
-# which is the right shape for a batch and a poor one for a person with a
-# question. The service account keeps `coordinator` because that names the
-# Python package both entry points share, and because its numeric subject is
-# pinned in the AWS trust policy and the Entra FIC. A job name is pinned by
-# nothing.
-JOB="${JOB:-research-batch}"
+# The two Cloud Run *jobs*, and neither is part of a deploy. Everything that
+# serves is a service; see `ensure_controls_job` for why these two are not, and
+# why that is the only defensible reason to reach for a job here.
+#
+# `research-coordinator` was the old name for the first of these, and it was
+# wrong twice over: it named the coordinator role, which belongs to the master
+# *service*, and it was created by every `deploy` -- so the project's only
+# Cloud Run resource was a job impersonating the front door. Named for what it
+# does now.
+CONTROLS_JOB="${CONTROLS_JOB:-research-controls}"
 MATRIX_JOB="${MATRIX_JOB:-research-matrix}"
 # The front door: front end, fan-out and judge on one service.
 MASTER="${MASTER:-research-master}"
@@ -279,16 +296,47 @@ deploy() {
     --member "serviceAccount:${COORDINATOR_SA}" \
     --role roles/run.invoker --quiet >/dev/null
   echo "granted roles/run.invoker to ${COORDINATOR_SA}"
+  echo
+  echo "deployed as Cloud Run *services*:"
+  echo "  ${SERVICE}  researcher agent"
+  echo "  ${MASTER}  front end, fan-out, judge"
+  echo "no Cloud Run job is created by a deploy -- see CONTROLS_JOB."
+}
 
-  gcloud run jobs deploy "$JOB" \
-    --image "$image" \
+# --------------------------------------------------------------------------
+# The controls harness
+# --------------------------------------------------------------------------
+#
+# The only Cloud Run *job* this project has any business creating, and `deploy`
+# deliberately does not create it. Everything that serves -- both researcher
+# agents and the master -- is a service, because that is what they are: they
+# hold an address, answer requests and scale to zero between them. A job cannot
+# do any of that, and a mesh whose members are jobs is not reachable over A2A
+# at all.
+#
+# What a job is genuinely better at is the one thing `verify` needs: a
+# per-execution environment override and an exit code to assert on. A negative
+# control has to run the real coordinator with one credential removed and prove
+# it *failed*; a service has no equivalent, because you cannot vary a service's
+# environment per request without redeploying it, and a redeploy means the
+# control no longer tests the configuration everything else runs.
+#
+# So it is created on demand by `verify`, named for what it is, and torn down
+# with `destroy`. After a `deploy`, `gcloud run jobs list` is empty.
+ensure_controls_job() {
+  local vars
+  vars="$(peer_env | paste -sd'@' -)"
+  [[ -z "$vars" ]] && { echo "wire the peers before running controls" >&2; exit 1; }
+
+  gcloud run jobs deploy "$CONTROLS_JOB" \
+    --image "$(built_image)" \
     --region "$REGION" --project "$PROJECT" \
     --service-account "$COORDINATOR_SA" \
-    --set-env-vars "GCP_A2A_ENDPOINT=${url},GCP_A2A_AUTH=google-id-token,RESEARCH_COORDINATOR_CLOUD=gcp" \
+    --set-env-vars "^@^${vars}" \
     --command /cnb/lifecycle/launcher \
-    --args="python,-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture,--cloud,gcp" \
+    --args="$THREE_CLOUD_ARGS" \
     --max-retries 0 --task-timeout 300s \
-    --quiet
+    --quiet >/dev/null
 }
 
 # The three-cloud env, assembled from the sibling scripts rather than restated
@@ -338,27 +386,22 @@ wire() {
   vars="$(peer_env | paste -sd'@' -)"
   [[ -z "$vars" ]] && { echo "nothing to wire" >&2; exit 1; }
 
-  # The args matter as much as the env. `deploy` pins --cloud gcp because at
-  # that point one cloud is all there is; wiring is precisely the step that
-  # stops being true, and leaving the flag behind produced a run that reported
-  # "1/1 clouds, unverified" and exited 0 with three legs correctly configured
-  # underneath it -- the env said three clouds and the args said one.
-  # (`verify` also passes --args, but to `jobs execute`, which is an
-  # execution-scoped override and leaves the job spec alone.)
-  gcloud run jobs update "$JOB" \
-    --region "$REGION" --project "$PROJECT" \
-    --set-env-vars "^@^${vars}" \
-    --args="$THREE_CLOUD_ARGS" --quiet >/dev/null
-
-  # The master takes the same peers, and takes them as an *update* rather than
-  # a set: `deploy` put its judge, store path and Vertex configuration in the
-  # environment, and --set-env-vars here would silently drop all of it. The
-  # job has no such state, which is why the two calls differ.
+  # The master takes the peers as an *update* rather than a set: `deploy` put
+  # its judge, store path and Vertex configuration in the environment, and
+  # --set-env-vars here would silently drop all of it.
+  #
+  # There is nothing else to wire. The controls job used to be updated here
+  # too, and it also needed its --args rewritten, because `deploy` pinned
+  # `--cloud gcp` at a point when one cloud was all there was and leaving the
+  # flag behind produced a run reporting "1/1 clouds" with three legs correctly
+  # configured underneath it. That whole class of drift is gone with the job:
+  # `ensure_controls_job` reads `peer_env` at creation time, so the controls
+  # cannot be wired to a different mesh than the master.
   gcloud run services update "$MASTER" \
     --region "$REGION" --project "$PROJECT" \
     --update-env-vars "^@^${vars}" --quiet >/dev/null
 
-  echo "master and coordinator job wired:"
+  echo "master wired:"
   peer_env | sed 's/^/  /'
   echo "  args: ${THREE_CLOUD_ARGS//,/ }"
   echo "  front end: $(master_url)"
@@ -383,9 +426,32 @@ open_ui() {
   echo "then open http://localhost:8080"
 }
 
+# A run against the deployed *service*, which is the thing a person or a
+# scheduler actually reaches. It used to execute a Cloud Run job, which meant
+# the command called `run` exercised a code path -- `coordinator.cli` in a
+# one-shot container -- that no user of this system ever takes. The master is
+# private, so this authenticates as you, with your own roles/run.invoker.
+#
+# The same POST is what Cloud Scheduler should send for a recurring run: an
+# OIDC token with the master's URL as the audience. That is the serverless
+# shape of "a scheduled, reproducible, recorded run" -- no second deployment of
+# the same code in a different execution model.
 run() {
-  gcloud run jobs execute "$JOB" \
-    --region "$REGION" --project "$PROJECT" --wait --quiet
+  local url topic
+  url="$(master_url)"
+  [[ -z "$url" ]] && { echo "no master deployed" >&2; exit 1; }
+  topic="${1:-how agent-to-agent protocols change multi-cloud architecture}"
+
+  curl -sS -X POST "${url}/api/research" \
+    -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+    -H "Content-Type: application/json" \
+    -d "$(printf '{"topic": %s}' "$(printf '%s' "$topic" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')")" \
+    | python3 -m json.tool
+
+  echo
+  echo "timeline:"
+  curl -sS "${url}/api/timeline" \
+    -H "Authorization: Bearer $(gcloud auth print-identity-token)"
 }
 
 # The matrix job carries the same env as the coordinator, because the whole
@@ -426,7 +492,7 @@ probe() {
   local rc=0
   echo
   echo "--- ${label}"
-  gcloud run jobs execute "$JOB" \
+  gcloud run jobs execute "$CONTROLS_JOB" \
     --region "$REGION" --project "$PROJECT" --wait --quiet \
     --args="-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture,--cloud,${cloud}" \
     ${1+--update-env-vars "$*"} >/dev/null 2>&1 || rc=$?
@@ -446,6 +512,12 @@ probe() {
 
 verify() {
   local url; url="$(service_url)"
+
+  # Created here rather than by `deploy`, so a deployed mesh is services only.
+  # Built from the same digest as the master, so the controls exercise the code
+  # that is actually serving.
+  echo "0. creating the controls harness (${CONTROLS_JOB})"
+  ensure_controls_job
 
   echo "1. unauthenticated, from here -- no Google token at all"
   echo "   researcher /health    -> $(curl -s -o /dev/null -w '%{http_code}' -m 25 "${url}/health")   (expect 403)"
@@ -485,13 +557,17 @@ verify() {
 # redeploying. Remove it by hand if you mean to.
 destroy() {
   gcloud run jobs delete "$MATRIX_JOB" --region "$REGION" --project "$PROJECT" --quiet || true
-  gcloud run jobs delete "$JOB" --region "$REGION" --project "$PROJECT" --quiet || true
-  # The pre-2026-08-13 name for the job above. A rename leaves the old resource
-  # behind, still holding the coordinator service account and still wired to
-  # every peer -- an orphan that can be executed by anyone who finds it and
-  # will keep answering long after this repo stops mentioning it.
-  gcloud run jobs delete research-coordinator \
-    --region "$REGION" --project "$PROJECT" --quiet 2>/dev/null || true
+  gcloud run jobs delete "$CONTROLS_JOB" --region "$REGION" --project "$PROJECT" --quiet || true
+  # Earlier names for the controls job, deleted by name because a rename leaves
+  # the old resource behind -- still holding the coordinator service account,
+  # still wired to every peer, executable by anyone who finds it, and answering
+  # long after this repo stops mentioning it. `research-coordinator` is the one
+  # that was really deployed: for a while it was the *only* Cloud Run resource
+  # in the project, a job standing in for a front door that did not exist.
+  for legacy in research-coordinator research-batch; do
+    gcloud run jobs delete "$legacy" \
+      --region "$REGION" --project "$PROJECT" --quiet 2>/dev/null || true
+  done
   gcloud run services delete "$SERVICE" --region "$REGION" --project "$PROJECT" --quiet || true
   gcloud run services delete "$MASTER" --region "$REGION" --project "$PROJECT" --quiet || true
   echo "kept gs://${EVAL_BUCKET} -- it holds the audit; delete it by hand."

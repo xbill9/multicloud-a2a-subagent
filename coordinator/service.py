@@ -13,12 +13,21 @@ the drafts; it does not need its own address. The cost is stated in the README
 and not argued away: the judge shares a vendor with one of the three
 participants.
 
-**Why a service and not the job.** ``coordinator/cli.py`` still exists and
-still runs as a Cloud Run job, which is the right shape for a scheduled,
-reproducible, recorded run. It is a poor shape for a person with a question.
-Both build their mesh through ``coordinator.participants.build_participants``,
-so there is one definition of what a peer is and the two entry points cannot
-drift apart on which clouds are wired or how a leg authenticates.
+**A service, not a job.** This is the coordinator, and the coordinator holds an
+address: a person with a question needs somewhere to send it, and a scheduled
+run is a POST from Cloud Scheduler with an OIDC token. Deploying a second copy
+of this code as a Cloud Run job to do the same work in a different execution
+model is how the project ended up, for a while, with a job named
+``research-coordinator`` standing in for a front door that had never been
+deployed at all.
+
+``coordinator/cli.py`` still exists, for local runs and for the negative
+controls, which are the one thing a job is genuinely better at -- they need a
+per-execution environment override and an exit code to assert on. Both entry
+points build their mesh through
+``coordinator.participants.build_participants``, so there is one definition of
+what a peer is and they cannot drift apart on which clouds are wired or how a
+leg authenticates.
 
 Deployed from source with no Dockerfile -- see ``Procfile`` and
 ``infra/deploy_gcp.sh``.

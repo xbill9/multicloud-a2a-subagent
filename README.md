@@ -471,15 +471,51 @@ the note explaining why covered only one of them.
   from_the_servers_not_the_runner` set `CURRENCY_MODEL_MODE`, which no code
   had read for a day. It did not fail; it stopped testing, which is worse.
 
-One rename that is **not** currency-related, made at the same time for the
-same reason: the Cloud Run job `research-coordinator` is now `research-batch`.
-Two deployed things named for one role is worse than either name being wrong —
-`gcloud run jobs list` showed `research-coordinator`, `gcloud run services
-list` showed `research-master`, and nothing on either page said which was the
-front door. The job is the headless recorded run; the service is the front
-door. The *service account* keeps `coordinator`, because that names the Python
-package both entry points share and its numeric subject is pinned on two other
-clouds. `destroy` deletes the old job name too.
+### Everything that serves is a Cloud Run service
+
+Checked against the live project on 2026-08-13, and the answer was worse than a
+naming problem: **`gcloud run services list` returned zero items in every
+region.** The only Cloud Run resources that existed were two *jobs* —
+`currency-coordinator`, belonging to the predecessor project, and
+`research-coordinator`, this one's. The status table above says the master and
+the GCP researcher were deployed on 2026-08-12; they are not there now.
+
+The cause is in the deploy path rather than in an accident: `deploy` created a
+Cloud Run job on every run, so the project's only surviving Cloud Run resource
+was a job impersonating a front door. That is fixed:
+
+| | kind | created by |
+|---|---|---|
+| `research-master` — front end, fan-out, judge | **service** | `deploy` |
+| `research-gcp` — the researcher agent | **service** | `deploy` |
+| `research-controls` — negative controls | job | `verify`, on demand |
+| `research-matrix` — the 3×3 grid | job | `matrix`, on demand |
+
+An agent holds an address, answers requests and scales to zero between them. A
+job has none of that and cannot be reached over A2A at all, so a mesh member
+deployed as a job is not a mesh member. The master is a service for the same
+reason — a person with a question needs somewhere to send it, and a scheduled
+run is a `POST /api/research` from Cloud Scheduler with an OIDC token, not a
+second deployment of the same code in a different execution model.
+
+The two jobs stay jobs because a job is genuinely better at exactly one thing,
+which is what both of them do: a per-execution environment override plus an
+exit code to assert on. A negative control has to run the coordinator with one
+credential removed and prove it *failed*, and a service cannot vary its
+environment per request without a redeploy — at which point the control no
+longer tests the configuration everything else runs. Neither is created by a
+deploy. After `deploy`, `gcloud run jobs list` is empty.
+
+`./infra/deploy_gcp.sh run` now POSTs to the master and prints the timeline,
+rather than executing a job — so the command called `run` exercises the path a
+user actually takes. `destroy` deletes the old job names (`research-coordinator`,
+`research-batch`) as well as the current ones, because a rename leaves the old
+resource behind still holding the coordinator service account and still wired
+to every peer.
+
+The *service account* keeps `coordinator` in its name: that names the Python
+package both entry points share, and its numeric subject is pinned in the AWS
+trust policy and the Entra FIC.
 
 The old `currency-*` resources are left alone. They belong to the other
 project, and they are currently running this project's code until it
