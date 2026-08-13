@@ -318,7 +318,10 @@ FOUNDRY_LOCATION="${FOUNDRY_LOCATION:-westus3}"
 # that is not there, and `llm` mode has never run, so the rename would be an
 # untested edit to an untested path. Rename it on the day `llm` mode is first
 # deployed, and not before.
-FOUNDRY_DEPLOYMENT="${FOUNDRY_DEPLOYMENT:-currency-reasoning}"
+# `RESEARCH_MODEL_AZURE` is the uniform knob all three clouds answer to; on
+# Azure the "model" the agent needs is the *deployment* name, which is what
+# this script creates and what AZURE_AI_MODEL_DEPLOYMENT_NAME is set to below.
+FOUNDRY_DEPLOYMENT="${RESEARCH_MODEL_AZURE:-${FOUNDRY_DEPLOYMENT:-currency-reasoning}}"
 FOUNDRY_MODEL="${FOUNDRY_MODEL:-gpt-5-mini}"
 
 foundry() {

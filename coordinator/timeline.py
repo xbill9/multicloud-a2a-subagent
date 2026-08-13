@@ -62,7 +62,7 @@ def render(run: ResearchRun) -> str:
 
     topic = run.request.topic
     header = [
-        f'run  {run.started_at.isoformat(timespec="seconds")}  "{topic[:60]}"',
+        f'run  {run.run_id}  {run.started_at.isoformat(timespec="seconds")}  "{topic[:60]}"',
         f"     {len(run.participants)} leg(s): {', '.join(run.participants)}"
         f"   elapsed {run.elapsed_ms:.0f}ms",
         "",
@@ -78,6 +78,14 @@ def render(run: ResearchRun) -> str:
         (_offset_ms(step, run) + step.elapsed_ms for _, step in steps),
         default=run.elapsed_ms,
     )
+    # Judging happens after every leg, so leaving it out of the scale would
+    # squash a slow model judge off the right-hand edge of the chart -- the
+    # step most worth seeing, drawn as though it took no time.
+    if (judged := run.verdict) is not None and judged.started_at is not None:
+        judge_end = (
+            judged.started_at - run.started_at
+        ).total_seconds() * 1000 + judged.elapsed_ms
+        span_ms = max(span_ms, judge_end)
 
     lines = [
         *header,
@@ -94,10 +102,34 @@ def render(run: ResearchRun) -> str:
             f"{f'{step.elapsed_ms:.0f}ms':>8} {_size(step):>7}"
             f"  |{_bar(offset, step.elapsed_ms, span_ms)}"
         )
+        # The provider's own id for the call, on its own line so the columns
+        # above stay narrow enough to read. This is the row someone else can
+        # check: every other figure here is this process describing itself.
+        if step.request_id:
+            lines.append(f"  {'':>8}  {'':<6}   id {step.request_id}")
         if not step.ok and step.detail:
             lines.append(f"  {'':>8}  {'':<6}   -> {step.detail[:96]}")
 
-    lines += ["", "  K credential   D agent-card discovery   I A2A invocation", ""]
+    # Judging is not a wire row and is not filed as one -- see `Verdict`. It is
+    # printed here anyway because it is the step that decides the answer, and a
+    # timeline that ends at the last leg leaves the reader to assume the gap
+    # between the slowest leg and `elapsed` was nothing in particular.
+    if (verdict := run.verdict) is not None and verdict.started_at is not None:
+        offset = (verdict.started_at - run.started_at).total_seconds() * 1000
+        label = f"{verdict.judge} -> {verdict.winner or 'no winner'}"
+        lines.append(
+            f"  {f'+{offset:.0f}ms':>8}  {'judge':<6} J "
+            f"{label[:44]:<44} {'-':>4} "
+            f"{f'{verdict.elapsed_ms:.0f}ms':>8} {'-':>7}"
+            f"  |{_bar(offset, verdict.elapsed_ms, span_ms)}"
+        )
+
+    lines += [
+        "",
+        "  K credential   D agent-card discovery   I A2A invocation   J judging",
+        "  ids are the provider's own; K/D/I rows were observed on the wire, J was not",
+        "",
+    ]
 
     # The conclusion the timeline exists to support, computed rather than
     # asserted. If the legs really did overlap, the sum of their spans exceeds

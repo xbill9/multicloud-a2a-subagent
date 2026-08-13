@@ -469,3 +469,90 @@ def test_no_mcp_scaffolding_remains():
     assert not (root / "mcp_server").exists()
     assert not (root / "coordinator" / "mcp_stdio.py").exists()
     assert "mcp" not in (root / "pyproject.toml").read_text()
+
+
+# --------------------------------------------------------------------------
+# Which model each cloud runs, and how it is set
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("module_name", "uniform", "native"),
+    [
+        ("agents.gcp.server", "RESEARCH_MODEL_GCP", "GENAI_MODEL"),
+        ("agents.aws.server", "RESEARCH_MODEL_AWS", "BEDROCK_MODEL_ID"),
+        (
+            "agents.azure.server",
+            "RESEARCH_MODEL_AZURE",
+            "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+        ),
+    ],
+)
+def test_every_cloud_answers_the_same_model_knob(module_name, uniform, native, monkeypatch):
+    """One name that reaches all three. The clouds spell the model three ways
+    natively, and a knob that reaches two agents out of three produces an audit
+    comparing a changed model against two unchanged ones -- keyed on
+    `cloud/model`, so it looks like a result rather than a misconfiguration."""
+    module = _cloud_module(module_name)
+    monkeypatch.setenv("RESEARCH_MODEL_MODE", "llm")
+    monkeypatch.setenv(uniform, "some-model-v9")
+    assert module.model_id() == "some-model-v9"
+
+
+@pytest.mark.parametrize(
+    ("module_name", "uniform", "native"),
+    [
+        ("agents.gcp.server", "RESEARCH_MODEL_GCP", "GENAI_MODEL"),
+        ("agents.aws.server", "RESEARCH_MODEL_AWS", "BEDROCK_MODEL_ID"),
+        (
+            "agents.azure.server",
+            "RESEARCH_MODEL_AZURE",
+            "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+        ),
+    ],
+)
+def test_the_vendor_native_name_still_works(module_name, uniform, native, monkeypatch):
+    """Kept because it is what a reader following Bedrock or Foundry docs will
+    reach for, and because deploy_aws.sh scopes the IAM policy by it."""
+    module = _cloud_module(module_name)
+    monkeypatch.setenv("RESEARCH_MODEL_MODE", "llm")
+    monkeypatch.delenv(uniform, raising=False)
+    monkeypatch.setenv(native, "native-name-v2")
+    assert module.model_id() == "native-name-v2"
+
+
+@pytest.mark.parametrize(
+    ("module_name", "uniform", "native"),
+    [
+        ("agents.gcp.server", "RESEARCH_MODEL_GCP", "GENAI_MODEL"),
+        ("agents.aws.server", "RESEARCH_MODEL_AWS", "BEDROCK_MODEL_ID"),
+    ],
+)
+def test_the_uniform_name_wins_over_the_native_one(module_name, uniform, native, monkeypatch):
+    monkeypatch.setenv("RESEARCH_MODEL_MODE", "llm")
+    monkeypatch.setenv(native, "native-name-v2")
+    monkeypatch.setenv(uniform, "uniform-name-v3")
+    assert _cloud_module(module_name).model_id() == "uniform-name-v3"
+
+
+def test_azure_refuses_to_guess_a_deployment_name(monkeypatch):
+    """A Foundry deployment name is account-local. Guessing turns a missing
+    setting into a provider 404, which reads as a protocol failure to whoever
+    is watching the matrix."""
+    module = _cloud_module("agents.azure.server")
+    monkeypatch.setenv("RESEARCH_MODEL_MODE", "llm")
+    monkeypatch.delenv("RESEARCH_MODEL_AZURE", raising=False)
+    monkeypatch.delenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", raising=False)
+    with pytest.raises(RuntimeError, match="no model configured for azure"):
+        module.model_id()
+
+
+@pytest.mark.parametrize("module_name", CLOUD_MODULES)
+def test_a_configured_model_is_still_none_in_direct_mode(module_name, monkeypatch):
+    """`Draft.model` is what `evaluations.report` keys a row on. A cloud that
+    reported a configured model while returning canned text would put
+    scaffolding into that model's score."""
+    module = _cloud_module(module_name)
+    monkeypatch.setenv("RESEARCH_MODEL_MODE", "direct")
+    monkeypatch.setenv(f"RESEARCH_MODEL_{module.CLOUD.upper()}", "some-model-v9")
+    assert module.model_id() == "none"

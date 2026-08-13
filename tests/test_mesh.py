@@ -185,3 +185,62 @@ async def test_the_judge_is_injectable():
     await mesh.run(request())
 
     assert calls == [1]
+
+
+# --------------------------------------------------------------------------
+# Evidence: what the run can prove about itself afterwards
+# --------------------------------------------------------------------------
+
+
+async def test_every_run_carries_an_identifier():
+    """Positions move. `/api/timeline?n=2` names a different run after the next
+    one is recorded, so a log line and a stored row can only be tied together
+    -- or to a provider's own record of the call -- by a string that does not."""
+    mesh = ResearchMesh([participant("gcp")])
+    first = await mesh.run(ResearchRequest(topic="solid-state batteries"))
+    second = await mesh.run(ResearchRequest(topic="solid-state batteries"))
+
+    assert first.run_id
+    assert first.run_id != second.run_id
+
+
+async def test_the_judge_step_is_timed_separately_from_the_legs():
+    """Judging is the only step after the barrier. It is invisible in every
+    per-leg figure and shows up in `elapsed_ms` as an unexplained gap -- which
+    is tolerable while the rubric takes microseconds and misleading the moment
+    a model takes the seat."""
+    run = await ResearchMesh([participant("gcp"), participant("aws")]).run(
+        ResearchRequest(topic="solid-state batteries")
+    )
+
+    assert run.verdict is not None
+    assert run.verdict.started_at is not None
+    assert run.verdict.started_at >= run.started_at
+    assert run.verdict.elapsed_ms >= 0
+
+
+async def test_judging_begins_only_after_every_leg_has_answered():
+    """The barrier, asserted rather than assumed: a judge that started early
+    would be ranking a partial field, and the timestamps are the only thing
+    that would show it."""
+    run = await ResearchMesh([participant("gcp"), participant("aws")]).run(
+        ResearchRequest(topic="solid-state batteries")
+    )
+
+    assert run.verdict is not None
+    for draft in run.drafts:
+        assert run.verdict.started_at >= draft.observed_at
+
+
+async def test_the_run_identifier_survives_the_store(tmp_path):
+    from evaluations.store import load, record
+
+    run = await ResearchMesh([participant("gcp")]).run(
+        ResearchRequest(topic="solid-state batteries")
+    )
+    path = tmp_path / "runs.jsonl"
+    record(run, path=path)
+
+    (_recorded_at, restored), = list(load(path))
+    assert restored.run_id == run.run_id
+    assert restored.verdict.elapsed_ms == run.verdict.elapsed_ms

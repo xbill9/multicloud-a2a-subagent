@@ -347,3 +347,54 @@ def test_the_request_model_is_the_one_the_cli_uses(client):
 
     assert request.topic == "padded"
     assert request.questions == ["q"]
+
+
+# --------------------------------------------------------------------------
+# The log copy of the evidence
+# --------------------------------------------------------------------------
+
+
+def test_the_timeline_is_logged_for_every_run(client, caplog):
+    """A second copy of the evidence, by a different path from the store.
+
+    The store is one file on a mounted bucket whose write failure is caught and
+    logged rather than raised, so a run can complete and leave no record at
+    all. `/api/timeline` also reads the store *by position*, which shifts under
+    every later run. A log line is append-only by construction and timestamped
+    by the platform.
+    """
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="master"):
+        response = client.post("/api/research", json=brief())
+
+    run_id = response.json()["run_id"]
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert run_id in logged
+    assert "timeline" in logged
+
+
+def test_the_log_names_the_run_when_the_store_could_not_be_written(client, monkeypatch, caplog):
+    """The case the log copy exists for. If the store write fails, the run id
+    in the failure line is the only handle left on what happened."""
+    import logging
+
+    def boom(run, **kwargs):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(service, "record", boom)
+
+    with caplog.at_level(logging.INFO, logger="master"):
+        response = client.post("/api/research", json=brief())
+
+    run_id = response.json()["run_id"]
+    failures = [
+        record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR
+    ]
+    assert any(run_id in message for message in failures)
+
+
+def test_the_run_id_is_in_the_api_response(client):
+    """So a caller can quote it back when asking what happened."""
+    payload = client.post("/api/research", json=brief()).json()
+    assert payload["run_id"]

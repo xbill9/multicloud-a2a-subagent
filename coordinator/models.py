@@ -20,6 +20,7 @@ is one judge's opinion on one brief, which is why `evaluations/` exists at all
 """
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -104,6 +105,14 @@ class TraceStep(BaseModel):
     #: before the stream is consumed, and reading it there would take the
     #: response away from the parser that is about to need it.
     bytes: int | None = None
+    #: The provider's own identifier for this request, lifted from whichever
+    #: header it uses -- `x-amzn-requestid`, `x-ms-request-id`, and so on.
+    #: The single most valuable field here, because it is the only one an
+    #: outside reader can check: every other column is this process describing
+    #: itself, while this one can be pasted into CloudWatch or Cloud Logging
+    #: and either finds the same call on the provider's side or does not.
+    #: Empty when the provider sent no such header.
+    request_id: str = ""
     ok: bool = True
     #: Only on failure, and only the provider's own words. This is the field
     #: the predecessor series kept discarding and kept paying for.
@@ -178,6 +187,15 @@ class Verdict(BaseModel):
     rubric_version: int = RUBRIC_VERSION
     rationale: str = ""
     warnings: list[str] = Field(default_factory=list)
+    #: When judging began, and how long it took. Carried on the verdict rather
+    #: than as a TraceStep because a `TraceStep` is an HTTP round trip and the
+    #: rubric judge makes none, while the model judge's calls happen inside
+    #: ADK's own transport where this process's event hooks cannot see them.
+    #: Inventing a wire row for either would be a trace that claims more than
+    #: it observed. These two fields claim exactly what they know: the judge
+    #: ran, at this moment, for this long.
+    started_at: datetime | None = None
+    elapsed_ms: float = 0.0
 
     @property
     def ranking(self) -> list[str]:
@@ -197,9 +215,27 @@ class Verdict(BaseModel):
         return totals[0] - totals[1]
 
 
+def new_run_id() -> str:
+    """A sortable, greppable identifier for one run.
+
+    The timestamp prefix so a log search narrows by eye, the random suffix so
+    two runs in the same second are still distinct. It exists because every
+    other handle on a run is positional -- ``/api/timeline?n=2`` counts
+    backwards from the end of the store -- and a position is not an identity:
+    it changes every time another run is recorded. Correlating a line in Cloud
+    Logging with a row in the store, or either with a provider's own record of
+    the call, needs a string that means the same thing tomorrow.
+    """
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+    return f"{stamp}-{uuid4().hex[:6]}"
+
+
 class ResearchRun(BaseModel):
     """Stable result envelope for one brief fanned out across the mesh."""
 
+    #: Identifies this run everywhere it is mentioned: the store, the service
+    #: log, the timeline header. See ``new_run_id``.
+    run_id: str = Field(default_factory=new_run_id)
     request: ResearchRequest
     #: When the fan-out began. The origin every trace step's offset is measured
     #: from, so a timeline can be rendered from a stored run and not only from

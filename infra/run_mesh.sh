@@ -29,12 +29,25 @@ start() {
     # agent phone it in, which is what makes "the judge does not pick it"
     # demonstrable rather than merely asserted. Unset for every agent by
     # default.
-    local upper degrade_var degrade
+    local upper degrade_var degrade model_var model
     upper="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
     degrade_var="RESEARCH_DRAFT_DEGRADE_${upper}"
     degrade="${!degrade_var:-}"
 
-    PORT="$port" RESEARCH_DRAFT_DEGRADE="$degrade" \
+    # Which model this agent runs in llm mode. Forwarded per agent rather than
+    # inherited from the environment, because the three clouds spell it three
+    # different ways natively -- GENAI_MODEL, BEDROCK_MODEL_ID,
+    # AZURE_AI_MODEL_DEPLOYMENT_NAME -- and an audit row is keyed on the model,
+    # so a knob that reaches two agents out of three produces a comparison
+    # nobody configured. Empty leaves each agent on its own default.
+    model_var="RESEARCH_MODEL_${upper}"
+    model="${!model_var:-}"
+
+    # `env` rather than an assignment prefix: bash decides what is an
+    # assignment before it expands anything, so `RESEARCH_MODEL_${upper}=x`
+    # would be passed to the agent as an argument and silently do nothing.
+    env PORT="$port" RESEARCH_DRAFT_DEGRADE="$degrade" \
+      "RESEARCH_MODEL_${upper}=${model}" \
       nohup "$PYTHON" -m "agents.$name.server" \
       >"$RUN_DIR/$name.log" 2>&1 &
     echo $! >"$pidfile"

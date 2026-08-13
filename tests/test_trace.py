@@ -218,3 +218,77 @@ async def test_ok_tracks_the_status_class(status, expected):
         await trace.on_response(httpx.Response(status, request=request))
 
     assert leg.steps[0].ok is expected
+
+
+# --------------------------------------------------------------------------
+# The provider's own request id
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "header",
+    ["x-amzn-RequestId", "x-ms-request-id", "x-goog-request-id", "x-request-id"],
+)
+async def test_the_providers_request_id_is_captured_whatever_it_calls_it(header):
+    """The only column in a trace an outside reader can verify: every other
+    figure is this process describing its own behaviour, while this one either
+    finds the same call in the provider's logs or does not."""
+    with trace.collect() as leg:
+        request = httpx.Request("POST", "https://agent.example.com/")
+        await trace.on_request(request)
+        await trace.on_response(
+            httpx.Response(200, request=request, headers={header: "req-0001"})
+        )
+
+    assert leg.steps[0].request_id == "req-0001"
+
+
+async def test_a_provider_that_sends_no_request_id_gets_an_empty_one():
+    """Not a synthesised id. A fabricated identifier that finds nothing in
+    CloudWatch is worse than an absent one, because it looks checkable."""
+    with trace.collect() as leg:
+        request = httpx.Request("POST", "https://agent.example.com/")
+        await trace.on_request(request)
+        await trace.on_response(httpx.Response(200, request=request))
+
+    assert leg.steps[0].request_id == ""
+
+
+def test_a_credential_boundary_captures_the_request_id_too():
+    """STS and Entra both return one, and an auth failure is the case where
+    quoting the provider's own id to the provider matters most."""
+    request = httpx.Request("POST", "https://sts.amazonaws.com/")
+    reply = httpx.Response(
+        403, request=request, text="AccessDenied", headers={"x-amzn-RequestId": "sts-77"}
+    )
+    with trace.collect() as leg:
+        trace.record_credential("gcp -> aws sts", reply)
+
+    assert leg.steps[0].request_id == "sts-77"
+
+
+# --------------------------------------------------------------------------
+# Two identical requests in flight at once
+# --------------------------------------------------------------------------
+
+
+async def test_a_retried_request_does_not_steal_the_first_ones_start_time():
+    """A retry, a redirect, or a stack that polls the same URL twice puts two
+    identical requests in flight. With one timing slot per URL the second
+    overwrote the first, so the first reported an impossibly short call and the
+    second found nothing at all -- landing at offset 0, which the timeline
+    draws as a call that happened before the run began."""
+    url = "https://agent.example.com/"
+    with trace.collect() as leg:
+        first = httpx.Request("POST", url)
+        second = httpx.Request("POST", url)
+        await trace.on_request(first)
+        await trace.on_request(second)
+        await trace.on_response(httpx.Response(200, request=first))
+        await trace.on_response(httpx.Response(200, request=second))
+
+    assert len(leg.steps) == 2
+    # Both round trips know when they started. Before the fix the second had
+    # `started_at is None`, which reads as an untimed call.
+    assert all(step.started_at is not None for step in leg.steps)
+    assert all(step.elapsed_ms >= 0 for step in leg.steps)

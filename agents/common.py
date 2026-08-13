@@ -56,6 +56,55 @@ def model_mode() -> str:
     return os.getenv("RESEARCH_MODEL_MODE", "direct").strip().lower()
 
 
+#: The vendor-native variable each cloud's SDK documentation names, per cloud.
+#: Kept because they are what a reader looking at Bedrock or Foundry docs will
+#: expect, and because `deploy_aws.sh` needs `BEDROCK_MODEL_ID` anyway to scope
+#: the IAM policy to the one model.
+NATIVE_MODEL_ENV = {
+    "gcp": "GENAI_MODEL",
+    "aws": "BEDROCK_MODEL_ID",
+    "azure": "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+}
+
+
+def resolve_model(cloud: str, default: str | None = None) -> str:
+    """Which model this cloud's agent will run, in ``llm`` mode.
+
+    Three names per cloud, in order: ``RESEARCH_MODEL_<CLOUD>``, then the
+    vendor-native variable above, then the default. The uniform name exists
+    because the audit's rows are keyed on ``cloud/model`` and changing the
+    model is therefore how a comparison is *configured* -- and a knob spelled
+    three different ways is one that gets set on two clouds out of three, which
+    silently produces an audit comparing a changed model against two unchanged
+    ones. The vendor-native spelling still wins over the default, so nothing
+    that reads like the provider's own documentation stops working.
+
+    Returns ``"none"`` outside ``llm`` mode, and that string is not cosmetic:
+    it travels in the draft header into ``Draft.model``, where
+    ``evaluations.report`` uses it to keep canned text out of a model's row.
+    """
+    if model_mode() != "llm":
+        return "none"
+
+    uniform = os.getenv(f"RESEARCH_MODEL_{cloud.upper()}", "").strip()
+    if uniform:
+        return uniform
+
+    native = os.getenv(NATIVE_MODEL_ENV[cloud], "").strip()
+    if native:
+        return native
+
+    if default is None:
+        # Azure has no default: a Foundry deployment name is an account-local
+        # string this repo cannot guess, and guessing would turn a missing
+        # setting into a confusing 404 from the provider.
+        raise RuntimeError(
+            f"no model configured for {cloud}: set RESEARCH_MODEL_{cloud.upper()} "
+            f"or {NATIVE_MODEL_ENV[cloud]}"
+        )
+    return default
+
+
 def degrade() -> bool:
     """Whether this agent should deliberately return a poor draft.
 

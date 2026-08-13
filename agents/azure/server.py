@@ -11,7 +11,9 @@ direct mode swaps the model for a stub agent, not the executor.
     RESEARCH_MODEL_MODE=llm python -m agents.azure.server   # Foundry model
 
 Environment: ``PORT`` (10003), ``PUBLIC_URL``, ``FOUNDRY_PROJECT_ENDPOINT``,
-``AZURE_AI_MODEL_DEPLOYMENT_NAME``, ``RESEARCH_MODEL_MODE``.
+``RESEARCH_MODEL_MODE``, and the model: ``RESEARCH_MODEL_AZURE`` or
+``AZURE_AI_MODEL_DEPLOYMENT_NAME`` (no default -- a deployment name cannot be
+guessed).
 """
 
 import os
@@ -23,6 +25,7 @@ from agents.common import (
     direct_reply,
     model_mode,
     public_url,
+    resolve_model,
     wrap_responder,
 )
 from agents.serving import build_agent_card, build_app
@@ -40,10 +43,12 @@ def model_id() -> str:
     project. `llm` mode fails loudly at build time instead, which is the right
     moment -- a missing deployment name that surfaces on the first request
     looks like a protocol failure to whoever is watching the matrix.
+
+    ``RESEARCH_MODEL_AZURE`` or ``AZURE_AI_MODEL_DEPLOYMENT_NAME`` -- see
+    ``resolve_model``. No default, deliberately: a deployment name is an
+    account-local string, and a guess would surface as a provider 404.
     """
-    if model_mode() != "llm":
-        return "none"
-    return os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"]
+    return resolve_model(CLOUD, None)
 
 
 class _DirectAgent:

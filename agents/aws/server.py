@@ -8,10 +8,10 @@ server is the protocol's own reference implementation.
     python -m agents.aws.server            # direct mode, no credentials
     RESEARCH_MODEL_MODE=llm python -m agents.aws.server   # Strands on Bedrock
 
-Environment: ``PORT`` (10002), ``PUBLIC_URL``, ``BEDROCK_MODEL_ID``,
-``RESEARCH_MODEL_MODE``.
+Environment: ``PORT`` (10002), ``PUBLIC_URL``, ``RESEARCH_MODEL_MODE``, and the
+model: ``RESEARCH_MODEL_AWS`` or ``BEDROCK_MODEL_ID``.
 
-``BEDROCK_MODEL_ID`` defaults to Nova micro, which is what the currency mesh
+The model defaults to Nova micro, which is what the currency mesh
 proved out on this account and is a *poor* default for drafting prose -- it was
 chosen when the task was a two-field lookup. Set it to something larger before
 reading anything into this column's scores, and record which model the numbers
@@ -27,6 +27,7 @@ from agents.common import (
     direct_reply,
     model_mode,
     public_url,
+    resolve_model,
     wrap_responder,
 )
 from agents.serving import CallbackExecutor, build_agent_card, build_app
@@ -36,10 +37,15 @@ CLOUD = "aws"
 
 
 def model_id() -> str:
-    """Which Bedrock model this leg will actually use, or "none" without one."""
-    if model_mode() != "llm":
-        return "none"
-    return os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-micro-v1:0")
+    """Which Bedrock model this leg will actually use, or "none" without one.
+
+    ``RESEARCH_MODEL_AWS`` or ``BEDROCK_MODEL_ID`` -- see ``resolve_model``.
+    Note that ``deploy_aws.sh`` scopes the execution role's
+    ``bedrock:InvokeModel`` to whatever it was told, so changing this without
+    redeploying the role gets an `AccessDenied` naming the model, not a
+    silently different answer.
+    """
+    return resolve_model(CLOUD, "us.amazon.nova-micro-v1:0")
 
 
 def _strands_responder():

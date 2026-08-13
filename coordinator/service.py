@@ -165,15 +165,25 @@ async def research(request):
 
     run = await mesh.run(brief)
 
+    # The whole timeline into the service log, every run, before the store is
+    # touched. Two reasons, both learned here rather than assumed: the store is
+    # a mounted bucket whose write failure is caught and logged below, so a run
+    # can complete and leave no record at all; and `/api/timeline` reads the
+    # store by position, which shifts under every later run. A log line is
+    # append-only by construction, timestamped by the platform, and carries the
+    # run id that ties it back to the stored copy.
+    log.info("run %s timeline:\n%s", run.run_id, render_timeline(run))
+
     if payload.get("record", True):
         async with _store_lock:
             try:
                 record(run)
+                log.info("run %s recorded to %s", run.run_id, store_path())
             except OSError as exc:
                 # A read-only or unmounted store must not discard a completed
                 # run: the drafts cost three cross-cloud calls, the recording
                 # did not.
-                log.error("could not record run: %s", exc)
+                log.error("could not record run %s: %s", run.run_id, exc)
 
     return JSONResponse(json.loads(run.model_dump_json()))
 

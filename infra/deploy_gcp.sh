@@ -89,6 +89,13 @@ THREE_CLOUD_ARGS="-m,coordinator.cli,how agent-to-agent protocols change multi-c
 # HTTP 200.
 MODEL_MODE="${MODEL_MODE:-direct}"
 
+# Which Gemini the researcher runs in llm mode. This was the one cloud whose
+# model could not be set from its deploy script: the agent read `GENAI_MODEL`
+# and nothing ever passed it, so the GCP row of the audit was pinned to the
+# default while the other two were configurable. An audit keyed on
+# `cloud/model` cannot afford one leg that ignores the knob.
+RESEARCH_MODEL_GCP="${RESEARCH_MODEL_GCP:-${GENAI_MODEL:-gemini-2.5-flash}}"
+
 # The judge the master runs by default. `rubric` for the same reason
 # MODEL_MODE defaults to `direct`: it is deterministic and credential-free, so
 # a bad verdict is a bug in the scorer rather than an opinion. JUDGE_MODE=llm
@@ -233,13 +240,14 @@ deploy() {
     --no-allow-unauthenticated \
     --port 8080 \
     --command /cnb/lifecycle/launcher --args="python,-m,agents.gcp.server" \
-    --set-env-vars "RESEARCH_MODEL_MODE=${MODEL_MODE},HOST=0.0.0.0,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
+    --set-env-vars "RESEARCH_MODEL_MODE=${MODEL_MODE},RESEARCH_MODEL_GCP=${RESEARCH_MODEL_GCP},HOST=0.0.0.0,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
     --min-instances 0 --max-instances 2 \
     --quiet
 
   local url
   url="$(service_url)"
   echo "researcher: $url"
+  echo "  brain ${MODEL_MODE}, model ${RESEARCH_MODEL_GCP}"
 
   # The master is deployed before the researcher exists, so it cannot be told
   # where the researcher is until now. This is the in-cloud leg -- master and

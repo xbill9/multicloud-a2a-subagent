@@ -11,7 +11,8 @@ should show which clients can express it.
     python -m agents.gcp.server            # direct mode, no credentials
     RESEARCH_MODEL_MODE=llm python -m agents.gcp.server     # Gemini
 
-Environment: ``PORT`` (10001), ``GENAI_MODEL``, ``RESEARCH_MODEL_MODE``.
+Environment: ``PORT`` (10001), ``RESEARCH_MODEL_MODE``, and the model:
+``RESEARCH_MODEL_GCP`` or ``GENAI_MODEL`` (default ``gemini-2.5-flash``).
 """
 
 import logging
@@ -27,6 +28,7 @@ from agents.common import (
     degrade,
     direct_reply,
     model_mode,
+    resolve_model,
     wrap_responder,
 )
 from protocol.research import render_draft
@@ -38,10 +40,11 @@ CLOUD = "gcp"
 
 
 def model_id() -> str:
-    """Which Gemini this leg will actually use, or "none" with no model at all."""
-    if model_mode() != "llm":
-        return "none"
-    return os.getenv("GENAI_MODEL", "gemini-2.5-flash")
+    """Which Gemini this leg will actually use, or "none" with no model at all.
+
+    ``RESEARCH_MODEL_GCP`` or ``GENAI_MODEL`` -- see ``resolve_model``.
+    """
+    return resolve_model(CLOUD, "gemini-2.5-flash")
 
 
 def _direct_agent():

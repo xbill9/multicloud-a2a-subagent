@@ -40,7 +40,10 @@ AUDIENCE="${AWS_A2A_AUDIENCE:-sts.amazonaws.com}"
 # foundation model, which is regionless in the ARN. Scoped to this one model
 # rather than "*", consistent with the least-privilege finding for
 # InvokeAgentRuntime in docs/DEPLOYMENT_PLAN.md.
-BEDROCK_MODEL_ID="${BEDROCK_MODEL_ID:-us.amazon.nova-micro-v1:0}"
+# `RESEARCH_MODEL_AWS` is the uniform knob all three clouds answer to;
+# `BEDROCK_MODEL_ID` is the vendor-native spelling, kept because the IAM policy
+# below scopes `bedrock:InvokeModel` to whichever model this resolves to.
+BEDROCK_MODEL_ID="${RESEARCH_MODEL_AWS:-${BEDROCK_MODEL_ID:-us.amazon.nova-micro-v1:0}}"
 BEDROCK_MODEL_BASE="${BEDROCK_MODEL_BASE:-${BEDROCK_MODEL_ID#us.}}"
 
 # `direct` stays the default: the matrix is a protocol instrument first, and a

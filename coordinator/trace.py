@@ -44,20 +44,47 @@ log = logging.getLogger("trace")
 #: tell apart.
 _CARD_PATHS = ("/.well-known/agent-card.json", "/.well-known/agent.json")
 
+#: Headers the three providers use for their own request identifier, in the
+#: order they are looked for. This is the only column in a trace that an
+#: outside reader can verify: everything else is this process describing its
+#: own behaviour, while a request id can be looked up in CloudWatch, Cloud
+#: Logging or Azure Monitor and either finds the call or does not. Lower-cased
+#: because httpx headers are case-insensitive but the providers are not
+#: consistent -- AWS sends `x-amzn-RequestId`, Azure `x-ms-request-id`.
+_REQUEST_ID_HEADERS = (
+    "x-amzn-requestid",
+    "x-amzn-request-id",
+    "x-amz-request-id",
+    "x-ms-request-id",
+    "x-ms-correlation-request-id",
+    "x-goog-request-id",
+    "x-cloud-trace-context",
+    "x-request-id",
+)
+
 
 class LegTrace:
     """The steps recorded for one leg, plus the round trips still in flight."""
 
     def __init__(self) -> None:
         self.steps: list[TraceStep] = []
-        self._pending: dict[str, tuple[float, datetime]] = {}
+        # A list per key, not one entry: a retry, a redirect or a stack that
+        # polls the same URL twice puts two identical requests in flight at
+        # once, and a single slot means the second overwrites the first's start
+        # time. The first response then reports an impossibly short call and
+        # the second finds nothing at all, landing at offset 0 -- rendered as
+        # a call that happened before the run began.
+        self._pending: dict[str, list[tuple[float, datetime]]] = {}
 
     def start(self, request: httpx.Request) -> None:
-        self._pending[_key(request)] = (perf_counter(), datetime.now(UTC))
+        self._pending.setdefault(_key(request), []).append(
+            (perf_counter(), datetime.now(UTC))
+        )
 
     def finish(self, response: httpx.Response) -> None:
         request = response.request
-        started = self._pending.pop(_key(request), None)
+        in_flight = self._pending.get(_key(request)) or []
+        started = in_flight.pop(0) if in_flight else None
         url = request.url
         path = url.path or "/"
         self.steps.append(
@@ -71,6 +98,7 @@ class LegTrace:
                 started_at=started[1] if started else None,
                 elapsed_ms=(perf_counter() - started[0]) * 1000 if started else 0.0,
                 bytes=_content_length(response),
+                request_id=_request_id(response),
                 ok=response.is_success,
                 # The body is deliberately not read here: an event hook runs
                 # before the response is streamed, and reading it would consume
@@ -94,6 +122,7 @@ class LegTrace:
                 started_at=datetime.now(UTC) - timedelta(milliseconds=_elapsed_ms(response)),
                 elapsed_ms=_elapsed_ms(response),
                 bytes=_content_length(response),
+                request_id=_request_id(response),
                 ok=response.is_success,
                 detail="" if response.is_success else response.text[:400],
             )
@@ -120,6 +149,21 @@ def _content_length(response: httpx.Response) -> int | None:
         return int(raw)
     except ValueError:
         return None
+
+
+def _request_id(response: httpx.Response) -> str:
+    """The provider's own id for this call, or "" if it did not send one.
+
+    Read from the headers, which are already parsed and cost nothing, rather
+    than from the body -- an event hook must not touch the stream. Empty is a
+    real answer and is rendered as such: a provider that sends no request id
+    leaves a call that cannot be cross-checked from the outside, and pretending
+    otherwise by synthesising one would defeat the only purpose this field has.
+    """
+    for header in _REQUEST_ID_HEADERS:
+        if value := response.headers.get(header):
+            return value.strip()[:120]
+    return ""
 
 
 def _elapsed_ms(response: httpx.Response) -> float:

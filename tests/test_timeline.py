@@ -177,3 +177,105 @@ def test_a_step_with_no_timestamp_does_not_crash_the_render():
     text = render(run({"gcp": [naked]}))
 
     assert "a.example.com" in text
+
+
+# --------------------------------------------------------------------------
+# Evidence a reader outside this process can check
+# --------------------------------------------------------------------------
+
+
+def test_run_id_is_in_the_header():
+    """Every other handle on a run is positional. `/api/timeline?n=2` counts
+    backwards from the end of the store, so the same URL names a different run
+    after the next one is recorded -- and a log line, a stored row and a
+    provider's own record can only be tied together by a string that does not
+    move."""
+    rendered = render(run({"gcp": [step(0, 10)]}))
+    run_id = run({"gcp": [step(0, 10)]}).run_id
+    assert rendered.splitlines()[0].startswith("run  ")
+    # Two runs constructed separately must not share an id.
+    assert run_id != run({"gcp": [step(0, 10)]}).run_id
+
+
+def test_provider_request_id_is_rendered_when_the_provider_sent_one():
+    text = render(run({"aws": [step(0, 40, request_id="abc-123-def")]}))
+    assert "id abc-123-def" in text
+
+
+def test_no_request_id_line_when_the_provider_sent_none():
+    """Absence is reported by saying nothing, not by printing an empty id. A
+    blank id row would read as a call that has one and lost it."""
+    text = render(run({"aws": [step(0, 40)]}))
+    assert "id " not in text
+
+
+def test_the_judge_is_on_the_timeline_with_its_own_timing():
+    """Judging is the only step after the barrier, so it is invisible in every
+    per-leg figure and shows up in `elapsed` as an unexplained gap."""
+    from coordinator.models import Verdict
+
+    judged = run({"gcp": [step(0, 100)]}, elapsed_ms=900.0)
+    judged.verdict = Verdict(
+        judge="gemini-2.5-pro",
+        winner="gcp",
+        started_at=START + timedelta(milliseconds=120),
+        elapsed_ms=700.0,
+    )
+    text = render(judged)
+    assert "judge" in text
+    assert "gemini-2.5-pro -> gcp" in text
+    assert "+120ms" in text
+    assert "700ms" in text
+
+
+def test_the_judge_row_is_marked_as_not_observed_on_the_wire():
+    """The rubric judge makes no HTTP call and the model judge's calls happen
+    inside ADK's transport, where this process's hooks cannot see them. The
+    row is printed because it decides the answer; the legend says what it is
+    not, so a `J` is never read as a round trip that was measured."""
+    from coordinator.models import Verdict
+
+    judged = run({"gcp": [step(0, 100)]})
+    judged.verdict = Verdict(judge="rubric", winner="gcp", started_at=START, elapsed_ms=1.0)
+    text = render(judged)
+    assert "J judging" in text
+    assert "was not" in text
+
+
+def test_a_slow_judge_does_not_fall_off_the_right_hand_edge():
+    """The bar scale is computed from the wire steps, which all finish before
+    judging begins. Left out, a judge slower than the whole fan-out would be
+    drawn as though it took no time -- the step most worth seeing, erased by
+    the chart's own axis."""
+    from coordinator.models import Verdict
+
+    judged = run({"gcp": [step(0, 50)]}, elapsed_ms=5000.0)
+    judged.verdict = Verdict(
+        judge="gemini-2.5-pro",
+        winner="gcp",
+        started_at=START + timedelta(milliseconds=60),
+        elapsed_ms=4000.0,
+    )
+    lines = [line for line in render(judged).splitlines() if "judge  J " in line]
+    assert len(lines) == 1
+    # The judge took 80% of the span, so its bar must be substantial rather
+    # than the single clamped cell a too-small span would give it.
+    assert lines[0].count("#") > 10
+
+
+def test_the_overlap_conclusion_ignores_the_judge():
+    """The legs-overlapped line is a claim about the fan-out. Judging runs
+    strictly after it, so folding it in would inflate the summed span and let
+    a slow judge argue the legs were concurrent when they were not."""
+    from coordinator.models import Verdict
+
+    judged = run(
+        {"gcp": [step(0, 400)], "aws": [step(10, 400)], "azure": [step(20, 400)]},
+        elapsed_ms=500.0,
+    )
+    judged.verdict = Verdict(
+        judge="rubric", winner="gcp", started_at=START + timedelta(milliseconds=430),
+        elapsed_ms=9000.0,
+    )
+    text = render(judged)
+    assert "legs summed 1200ms" in text
