@@ -30,7 +30,7 @@ from agents.common import (
 )
 from agents.serving import build_agent_card, build_app
 from protocol.research import render_draft
-from protocol.search import search_enabled, web_search
+from protocol.search import search_count, search_enabled, web_search
 
 DEFAULT_PORT = 10003
 CLOUD = "azure"
@@ -120,6 +120,7 @@ class _StampedAgent:
     async def run(self, query, session=None, stream: bool = False, **kwargs):
         from agent_framework import AgentResponse, Message
 
+        before = search_count()
         response = await self._inner.run(query, session=session, stream=stream, **kwargs)
         body = getattr(response, "text", None) or ""
         return AgentResponse(
@@ -128,7 +129,11 @@ class _StampedAgent:
                     role="assistant",
                     contents=[
                         render_draft(
-                            body, agent=CLOUD, model=model_id(), brain=model_mode()
+                            body,
+                            agent=CLOUD,
+                            model=model_id(),
+                            brain=model_mode(),
+                            searches=search_count() - before,
                         )
                     ],
                 )

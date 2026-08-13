@@ -32,7 +32,12 @@ from agents.common import (
     wrap_responder,
 )
 from protocol.research import render_draft
-from protocol.search import search_enabled, search_summary, web_search
+from protocol.search import (
+    search_count,
+    search_enabled,
+    search_summary,
+    web_search,
+)
 
 logging.basicConfig(format="[%(levelname)s]: %(message)s", level=logging.INFO)
 
@@ -124,6 +129,9 @@ def _stamped(inner):
 
     class HeaderStamped(BaseAgent):
         async def _run_async_impl(self, ctx) -> AsyncGenerator:
+            # Delta across this one run, for the reason in `wrap_responder`:
+            # the counter is per process and Cloud Run runs many.
+            before = search_count()
             texts: list[str] = []
             async for event in inner.run_async(ctx):
                 # Function calls and their results have no text and are skipped
@@ -141,7 +149,11 @@ def _stamped(inner):
                     parts=[
                         types.Part(
                             text=render_draft(
-                                body, agent=CLOUD, model=model_id(), brain=model_mode()
+                                body,
+                                agent=CLOUD,
+                                model=model_id(),
+                                brain=model_mode(),
+                                searches=search_count() - before,
                             )
                         )
                     ],

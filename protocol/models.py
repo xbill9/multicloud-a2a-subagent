@@ -79,6 +79,14 @@ class Draft(BaseModel):
     #: clear the bar*, which is a measurement in a way that one blind score is
     #: not.
     round: int = Field(default=1, ge=1)
+    #: How many web searches the agent made writing *this* draft, or -1 if it
+    #: did not say. Travels in the serving header rather than being read off the
+    #: agent's /health, because that counter is per process and both AgentCore
+    #: and Cloud Run run many: a health check answered by a cold instance
+    #: reports 0 for a draft that was thoroughly researched. This is the only
+    #: number that can distinguish a cited draft from a fabricated one, since
+    #: the rubric's `evidence` dimension counts citation *shapes* and cannot.
+    searches: int = -1
 
     @property
     def word_count(self) -> int:

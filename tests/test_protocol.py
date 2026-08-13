@@ -100,7 +100,7 @@ def test_the_serving_header_round_trips():
     text = render_draft(body(), agent="aws", model="nova", brain="llm")
     fields, remainder = parse_header(text)
 
-    assert fields == {"agent": "aws", "model": "nova", "brain": "llm"}
+    assert fields == {"agent": "aws", "model": "nova", "brain": "llm", "searches": "0"}
     assert remainder.startswith("# A Title")
 
 
@@ -165,3 +165,41 @@ def test_word_count_ignores_the_header():
     # "Section" -- word_count is str.split(), so markdown punctuation counts.
     # Stated rather than tidied away: `concision` scores against this number.
     assert draft.word_count == 55
+
+
+def test_the_search_count_travels_with_the_draft():
+    """Per draft, not per process.
+
+    The agents also expose a search counter on /health, and it is useless for
+    this: it accumulates across every request the container ever served, and
+    both AgentCore and Cloud Run run many containers -- so a health check
+    answered by a cold instance reports 0 for a draft that was thoroughly
+    researched. Measured live on 2026-08-13: the GCP researcher reported
+    `searches: 0` immediately after producing a draft scoring 5.0 on evidence.
+    """
+    text = render_draft("# T\n\n" + "word " * 40, agent="gcp", model="g", brain="llm", searches=7)
+    draft = parse_draft(
+        text,
+        ResearchRequest(topic="solid-state batteries"),
+        source="gcp",
+        cloud="gcp",
+        latency_ms=1.0,
+        observed_at=datetime.now(UTC),
+    )
+    assert draft.searches == 7
+
+
+def test_a_draft_from_an_agent_that_reports_no_count_is_not_reported_as_zero():
+    """-1 and 0 are different claims. Zero says the draft was written without
+    looking anything up, which is exactly the finding worth catching; absent
+    says the agent never told us, which is what any third-party A2A server
+    that never heard of this repo will do."""
+    draft = parse_draft(
+        "<!-- a2a-research agent=x model=y brain=llm -->\n# T\n\n" + "word " * 40,
+        ResearchRequest(topic="solid-state batteries"),
+        source="x",
+        cloud="x",
+        latency_ms=1.0,
+        observed_at=datetime.now(UTC),
+    )
+    assert draft.searches == -1

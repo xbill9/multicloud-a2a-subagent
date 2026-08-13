@@ -26,6 +26,7 @@ import os
 
 from protocol.models import ResearchRequest
 from protocol.research import parse_brief, render_draft
+from protocol.search import search_count
 
 #: The A2A card name every cloud advertises. Deliberately the same on all
 #: three: the clients dial a card name, and a per-cloud name would mean three
@@ -205,8 +206,18 @@ def wrap_responder(inner, *, agent: str, model: str):
     """
 
     async def respond(prompt: str) -> str:
+        # Delta, not the total: the process counter accumulates across every
+        # request the container has ever served, and what the audit needs is
+        # what *this* draft cost.
+        before = search_count()
         body = await inner(prompt)
-        return render_draft(body, agent=agent, model=model, brain=model_mode())
+        return render_draft(
+            body,
+            agent=agent,
+            model=model,
+            brain=model_mode(),
+            searches=search_count() - before,
+        )
 
     return respond
 

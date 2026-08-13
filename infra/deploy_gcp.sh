@@ -106,6 +106,18 @@ EVAL_MOUNT="/eval"
 # answered. Cloud Run's 300s default is enough until one cloud is merely slow
 # rather than down, at which point it turns a degraded run into a 504.
 MASTER_TIMEOUT="${MASTER_TIMEOUT:-900}"
+
+# How long the coordinator waits on one leg. Raised from 120 to 300 on
+# 2026-08-13 after the first deployed `llm` run, where the Azure leg timed out
+# at 120s and looked like a failure. It was not: the agent was healthy, had
+# made ten searches, and was still working. gpt-5-mini is a reasoning model and
+# the brief now involves a tool-call loop, so the predecessor series' 18-25s
+# figures for a hosted runtime -- measured with no tools and no reasoning -- do
+# not describe this workload at all.
+#
+# Must stay below MASTER_TIMEOUT or Cloud Run kills the request first and the
+# 504 arrives with no run recorded.
+RESEARCH_TIMEOUT_SECONDS="${RESEARCH_TIMEOUT_SECONDS:-300}"
 COORDINATOR_SA="${COORDINATOR_SA:-research-coordinator@${PROJECT}.iam.gserviceaccount.com}"
 #: No --cloud flag, so coordinator.cli defaults to all three participants.
 THREE_CLOUD_ARGS="-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture"
@@ -223,7 +235,7 @@ build() {
     --service-account "$COORDINATOR_SA" \
     "$ingress" \
     --timeout "$MASTER_TIMEOUT" \
-    --set-env-vars "RESEARCH_COORDINATOR_CLOUD=gcp,RESEARCH_JUDGE_MODE=${JUDGE_MODE},RESEARCH_EVAL_STORE=${EVAL_MOUNT}/runs.jsonl,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
+    --set-env-vars "RESEARCH_COORDINATOR_CLOUD=gcp,RESEARCH_JUDGE_MODE=${JUDGE_MODE},RESEARCH_TIMEOUT_SECONDS=${RESEARCH_TIMEOUT_SECONDS},RESEARCH_EVAL_STORE=${EVAL_MOUNT}/runs.jsonl,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
     --add-volume "name=eval,type=cloud-storage,bucket=${EVAL_BUCKET}" \
     --add-volume-mount "volume=eval,mount-path=${EVAL_MOUNT}" \
     --min-instances 0 --max-instances 1 \

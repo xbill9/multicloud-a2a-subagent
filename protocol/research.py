@@ -105,7 +105,22 @@ def parse_brief(text: str) -> ResearchRequest | None:
         return None
 
 
-def render_draft(body: str, *, agent: str, model: str, brain: str) -> str:
+def _int_field(raw: str | None) -> int:
+    """A header field that should be a number, or -1 when it was not sent.
+
+    -1 rather than 0: an agent that did not report a search count and an agent
+    that reported zero searches are different claims, and only the second one
+    says the draft was written without looking anything up.
+    """
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return -1
+
+
+def render_draft(
+    body: str, *, agent: str, model: str, brain: str, searches: int = 0
+) -> str:
     """Wrap an agent's output in the header the coordinator reads back.
 
     Called on the *serving* side, around whatever the model produced. Written
@@ -113,7 +128,10 @@ def render_draft(body: str, *, agent: str, model: str, brain: str) -> str:
     later pass through, and so a human reading the raw reply sees the draft
     rather than a metadata banner.
     """
-    return f"<!-- a2a-research agent={agent} model={model} brain={brain} -->\n{body.lstrip()}"
+    return (
+        f"<!-- a2a-research agent={agent} model={model} brain={brain} "
+        f"searches={searches} -->\n{body.lstrip()}"
+    )
 
 
 def parse_header(text: str) -> tuple[dict[str, str], str]:
@@ -192,6 +210,7 @@ def parse_draft(
         cloud=fields.get("agent", cloud),
         model=fields.get("model", "unknown"),
         brain=fields.get("brain", "unknown"),
+        searches=_int_field(fields.get("searches")),
         title=extract_title(body),
         body=body,
         observed_at=observed_at,
