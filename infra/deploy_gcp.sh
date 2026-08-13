@@ -57,11 +57,23 @@ REGION="${REGION:-us-central1}"
 # `deploy_azure.sh fic` after changing COORDINATOR_SA and the federation
 # follows.
 REPO_NAME="${REPO_NAME:-research-mesh}"
+# The researcher agent on this cloud. Named for the cloud rather than the role,
+# matching `research_aws` on AgentCore and `research-azure` on Container Apps:
+# across the mesh the cloud is what distinguishes one researcher from another.
 SERVICE="${SERVICE:-research-gcp}"
-JOB="${JOB:-research-coordinator}"
+# Renamed from `research-coordinator` on 2026-08-13. Two deployed things named
+# for the same role is worse than either name being wrong: `gcloud run jobs
+# list` showed `research-coordinator` and `gcloud run services list` showed
+# `research-master`, and nothing on either page said which one was the front
+# door. This is the headless, scheduled, recorded run -- `coordinator.cli`,
+# which is the right shape for a batch and a poor one for a person with a
+# question. The service account keeps `coordinator` because that names the
+# Python package both entry points share, and because its numeric subject is
+# pinned in the AWS trust policy and the Entra FIC. A job name is pinned by
+# nothing.
+JOB="${JOB:-research-batch}"
 MATRIX_JOB="${MATRIX_JOB:-research-matrix}"
-# The master is new, so it gets a name that says what it does. The three above
-# do not, for the reason given further up: they are pinned identities.
+# The front door: front end, fan-out and judge on one service.
 MASTER="${MASTER:-research-master}"
 
 # The audit outlives the instance that wrote it. Cloud Run's filesystem does
@@ -474,6 +486,12 @@ verify() {
 destroy() {
   gcloud run jobs delete "$MATRIX_JOB" --region "$REGION" --project "$PROJECT" --quiet || true
   gcloud run jobs delete "$JOB" --region "$REGION" --project "$PROJECT" --quiet || true
+  # The pre-2026-08-13 name for the job above. A rename leaves the old resource
+  # behind, still holding the coordinator service account and still wired to
+  # every peer -- an orphan that can be executed by anyone who finds it and
+  # will keep answering long after this repo stops mentioning it.
+  gcloud run jobs delete research-coordinator \
+    --region "$REGION" --project "$PROJECT" --quiet 2>/dev/null || true
   gcloud run services delete "$SERVICE" --region "$REGION" --project "$PROJECT" --quiet || true
   gcloud run services delete "$MASTER" --region "$REGION" --project "$PROJECT" --quiet || true
   echo "kept gs://${EVAL_BUCKET} -- it holds the audit; delete it by hand."

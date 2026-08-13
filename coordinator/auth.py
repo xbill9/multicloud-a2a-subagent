@@ -339,7 +339,16 @@ class AwsSigV4Auth(httpx.Auth):
         region: str,
         audience: str,
         service: str = "bedrock-agentcore",
-        session_name: str = "currency-mesh-coordinator",
+        # Appears in CloudTrail and in the assumed-role ARN AWS quotes back in
+        # every denial -- `assumed-role/research-aws-federated/<this>`. It was
+        # the last `currency-*` string left in a live identity, and the one
+        # least likely to be noticed, because nothing fails when it is wrong:
+        # the trust policy conditions on `oaud` and `sub` only, so a stale
+        # session name authenticates perfectly and simply mislabels every call
+        # this mesh makes in someone else's audit log. Matches the Entra app
+        # registration name on the Azure leg, so the same caller is the same
+        # word on both clouds.
+        session_name: str = "research-mesh-master",
         extra_headers: dict[str, str] | None = None,
         identity: WorkloadIdentity | None = None,
         timeout_s: float = 15.0,

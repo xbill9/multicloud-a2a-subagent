@@ -186,12 +186,17 @@ def test_in_cloud_cells_are_marked_and_excluded_from_the_interop_count():
 def test_brain_label_comes_from_the_servers_not_the_runner(monkeypatch):
     """The regression: the runner is a different container once deployed.
 
-    Reading CURRENCY_MODEL_MODE here produced a table that said brain=direct
-    while every agent in it was running a model.
+    Reading the runner's own model-mode variable produced a table that said
+    brain=direct while every agent in it was running a model.
+
+    This set `CURRENCY_MODEL_MODE` until 2026-08-13, by which time no code read
+    that name -- so the guard was inert and would have passed with the defect
+    fully restored. A regression test pinned to a renamed variable does not
+    fail; it stops testing, silently, which is the worse of the two.
     """
-    monkeypatch.setenv("CURRENCY_MODEL_MODE", "direct")
+    monkeypatch.setenv("RESEARCH_MODEL_MODE", "direct")
     report = MatrixReport(
-        request_summary="100 USD -> EUR",
+        request_summary="solid-state batteries in 2026",
         model_mode="direct",
         cells=[
             cell("a2a-sdk", "gcp", True, server_brain="llm"),

@@ -446,10 +446,40 @@ immediately after `create` fails with *"Service account … does not exist"* for
 one that plainly does — so the wait polls until a binding would succeed rather
 than sleeping a guessed interval.
 
-One thing is deliberately still `currency-*`: `FOUNDRY_DEPLOYMENT` names a
-Foundry model deployment that may already exist and is only reached by `llm`
-mode, which has never run. Renaming it would be an untested edit to an
-untested path.
+**Finished on 2026-08-13.** That day's rename left three things behind, and
+the note explaining why covered only one of them.
+
+- **Azure Foundry** — `currency-mesh-foundry`, `currency-mesh-proj` and the
+  `currency-reasoning` deployment. The note justified keeping the *deployment*
+  ("renaming it points `llm` mode at something that is not there, and `llm`
+  mode has never run") and ended "rename it on the day `llm` mode is first
+  deployed". The account and project had no such justification and were the
+  more serious pair: `deploy_azure.sh foundry` **creates** them when absent and
+  will `purge` a soft-deleted account of the same name, so this repo was
+  adopting — and could have destroyed — the predecessor's Foundry account.
+  That is the same shared-resource problem the service account rename existed
+  to fix, still live on a third cloud.
+- **The STS role session name**, `currency-mesh-coordinator`, hard-coded in
+  `coordinator/auth.py`. The one with no failure mode: `RoleSessionName` is
+  caller-chosen and nothing validates it — the trust policy conditions on
+  `oaud` and `sub` only — so a stale name authenticates perfectly and simply
+  files every call this mesh makes under the predecessor's name in CloudTrail,
+  which is the one log that cannot be corrected afterwards. Now
+  `research-mesh-master`, matching the Entra app registration, so the same
+  caller is the same word on both clouds. Asserted in `tests/test_auth.py`.
+- **A regression test pinned to a dead variable.** `test_brain_label_comes_
+  from_the_servers_not_the_runner` set `CURRENCY_MODEL_MODE`, which no code
+  had read for a day. It did not fail; it stopped testing, which is worse.
+
+One rename that is **not** currency-related, made at the same time for the
+same reason: the Cloud Run job `research-coordinator` is now `research-batch`.
+Two deployed things named for one role is worse than either name being wrong —
+`gcloud run jobs list` showed `research-coordinator`, `gcloud run services
+list` showed `research-master`, and nothing on either page said which was the
+front door. The job is the headless recorded run; the service is the front
+door. The *service account* keeps `coordinator`, because that names the Python
+package both entry points share and its numeric subject is pinned on two other
+clouds. `destroy` deletes the old job name too.
 
 The old `currency-*` resources are left alone. They belong to the other
 project, and they are currently running this project's code until it

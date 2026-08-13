@@ -309,19 +309,31 @@ EOF
 # with "Encrypted content is not supported with this model", so the choice is
 # between a reasoning model and giving up store=False. Keeping store=False keeps
 # the conversation out of Azure's storage, which is worth more than the latency.
-FOUNDRY_ACCOUNT="${FOUNDRY_ACCOUNT:-currency-mesh-foundry}"
-FOUNDRY_PROJECT="${FOUNDRY_PROJECT:-currency-mesh-proj}"
+# Renamed off `currency-*` on 2026-08-13, completing the namespace split the
+# rest of the mesh got on 2026-08-12. These three were left behind then, and
+# the account and project were never covered by that day's carve-out at all --
+# only the deployment was, on the grounds that renaming it would point `llm`
+# mode at something that is not there, and `llm` mode had never run. That note
+# ended "rename it on the day `llm` mode is first deployed, and not before",
+# which is this one.
+#
+# The account and project matter more than the deployment did. `foundry()`
+# below *creates* them when absent and will `purge` a soft-deleted account of
+# the same name, so under the old names this repo was adopting -- and could
+# destroy -- the predecessor mesh's Foundry account. That is the same shared
+# resource this project already renamed a service account to escape, and it
+# was still live.
+#
+# Consequence to expect on the next `deploy_azure.sh foundry`: new AIServices
+# account, project and model deployment are created. The `currency-*` ones are
+# left alone; they belong to the other project.
+FOUNDRY_ACCOUNT="${FOUNDRY_ACCOUNT:-research-mesh-foundry}"
+FOUNDRY_PROJECT="${FOUNDRY_PROJECT:-research-mesh-proj}"
 FOUNDRY_LOCATION="${FOUNDRY_LOCATION:-westus3}"
-# Deliberately NOT renamed with the rest of the namespace on 2026-08-12. This
-# names a Foundry *model deployment* that may already exist and that this
-# script only creates on demand; renaming it points `llm` mode at a deployment
-# that is not there, and `llm` mode has never run, so the rename would be an
-# untested edit to an untested path. Rename it on the day `llm` mode is first
-# deployed, and not before.
 # `RESEARCH_MODEL_AZURE` is the uniform knob all three clouds answer to; on
 # Azure the "model" the agent needs is the *deployment* name, which is what
 # this script creates and what AZURE_AI_MODEL_DEPLOYMENT_NAME is set to below.
-FOUNDRY_DEPLOYMENT="${RESEARCH_MODEL_AZURE:-${FOUNDRY_DEPLOYMENT:-currency-reasoning}}"
+FOUNDRY_DEPLOYMENT="${RESEARCH_MODEL_AZURE:-${FOUNDRY_DEPLOYMENT:-research-reasoning}}"
 FOUNDRY_MODEL="${FOUNDRY_MODEL:-gpt-5-mini}"
 
 foundry() {

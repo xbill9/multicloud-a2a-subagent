@@ -67,10 +67,10 @@ async def test_mint_requests_format_full():
     seen: list[httpx.Request] = []
     identity = identity_returning(jwt(), record=seen)
 
-    await identity.id_token("https://currency.example.run.app")
+    await identity.id_token("https://research.example.run.app")
 
     assert seen[0].url.params["format"] == "full"
-    assert seen[0].url.params["audience"] == "https://currency.example.run.app"
+    assert seen[0].url.params["audience"] == "https://research.example.run.app"
     assert seen[0].headers["Metadata-Flavor"] == "Google"
 
 
@@ -189,7 +189,7 @@ def sigv4_auth(sts_body: str = STS_OK, status: int = 200, record: list | None = 
         return httpx.Response(status, text=sts_body)
 
     return AwsSigV4Auth(
-        role_arn="arn:aws:iam::123456789012:role/currency-mesh",
+        role_arn="arn:aws:iam::123456789012:role/research-aws-federated",
         region="us-west-2",
         audience="sts.amazonaws.com",
         identity=identity_returning(jwt()),
@@ -313,7 +313,7 @@ def entra_auth(payload: dict, status: int = 200, record: list | None = None):
     return EntraFederatedAuth(
         tenant_id="tenant-uuid",
         client_id="client-uuid",
-        scope="api://currency/.default",
+        scope="api://research-mesh-master/.default",
         identity=identity_returning(jwt(), record=record),
         transport=transport(handler),
     )
@@ -374,10 +374,10 @@ def test_google_id_token_audience_defaults_to_the_service_root(monkeypatch):
     monkeypatch.setenv("GCP_A2A_AUTH", "google-id-token")
     monkeypatch.delenv("GCP_A2A_AUDIENCE", raising=False)
 
-    auth = credentials_for("gcp", "https://currency-gcp-abc.a.run.app/some/path")
+    auth = credentials_for("gcp", "https://research-gcp-abc.a.run.app/some/path")
 
     assert auth.mode == "google-id-token"
-    assert auth._audience == "https://currency-gcp-abc.a.run.app"
+    assert auth._audience == "https://research-gcp-abc.a.run.app"
 
 
 def test_unknown_mode_is_rejected_rather_than_silently_unauthenticated(monkeypatch):
@@ -589,3 +589,25 @@ def test_a_misconfigured_peer_fails_its_cell_not_the_matrix(monkeypatch):
 
     assert cell.ok is False
     assert cell.failure_kind == FailureKind.VALIDATION.value
+
+
+async def test_the_role_session_name_identifies_this_mesh():
+    """The one auth string whose failure mode is silence.
+
+    `RoleSessionName` is caller-chosen and nothing validates it: the trust
+    policy conditions on `oaud` and `sub` only, so a stale name authenticates
+    perfectly. What it does instead is label every call in CloudTrail and in
+    the assumed-role ARN AWS quotes back in each denial. It read
+    `currency-mesh-coordinator` until 2026-08-13, which meant this mesh's calls
+    were filed under the predecessor project's name in the one log that is not
+    ours to correct afterwards.
+    """
+    seen: list[httpx.Request] = []
+    auth = sigv4_auth(record=seen)
+
+    async for _ in auth.async_auth_flow(httpx.Request("POST", "https://agentcore.example/a2a")):
+        pass
+
+    body = seen[0].content.decode()
+    assert "RoleSessionName=research-mesh-master" in body
+    assert "currency" not in body
