@@ -19,7 +19,12 @@ from clients import CLIENT_STACKS
 from coordinator.judge import JUDGE_MODES, load_judge
 from coordinator.mesh import ResearchMesh
 from coordinator.models import ResearchRequest
-from coordinator.participants import CLOUD_ENDPOINTS, Participant, build_participants
+from coordinator.participants import (
+    CLOUD_ENDPOINTS,
+    Participant,
+    build_participants,
+    default_timeout_seconds,
+)
 from evaluations.store import record
 
 
@@ -60,7 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not append this run to the evaluation store",
     )
     parser.add_argument("--show-drafts", action="store_true", help="print every draft in full")
-    parser.add_argument("--timeout-seconds", type=float, default=120.0)
+    # Default from the environment, not a literal: the controls harness runs
+    # this CLI in a Cloud Run job beside a master service that reads
+    # RESEARCH_TIMEOUT_SECONDS, and a hard 120 here made the two disagree.
+    parser.add_argument(
+        "--timeout-seconds", type=float, default=default_timeout_seconds()
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
 

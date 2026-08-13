@@ -56,7 +56,12 @@ from coordinator.frontend import PAGE
 from coordinator.judge import JUDGE_MODES, judge_mode, load_judge
 from coordinator.mesh import ResearchMesh
 from coordinator.models import ResearchRequest
-from coordinator.participants import CLOUD_ENDPOINTS, build_participants, endpoint_for
+from coordinator.participants import (
+    CLOUD_ENDPOINTS,
+    build_participants,
+    default_timeout_seconds,
+    endpoint_for,
+)
 from coordinator.timeline import render as render_timeline
 from evaluations.report import aggregate
 from evaluations.report import render as render_audit
@@ -66,7 +71,7 @@ from evaluations.store import record, store_path
 logging.basicConfig(format="[%(levelname)s]: %(message)s", level=logging.INFO)
 log = logging.getLogger("master")
 
-DEFAULT_TIMEOUT = float(os.getenv("RESEARCH_TIMEOUT_SECONDS", "120"))
+DEFAULT_TIMEOUT = default_timeout_seconds()
 
 #: Serialises appends to the evaluation store. The store is one file appended
 #: to by every run, and on Cloud Run it is a GCS volume where a write is a

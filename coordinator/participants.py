@@ -83,6 +83,30 @@ class Participant:
         return self.name
 
 
+#: How long one leg may take, for *both* entry points.
+#:
+#: It lived as an argparse default in `coordinator/cli.py` and separately as an
+#: env read in `coordinator/service.py`, so the deployed master honoured
+#: `RESEARCH_TIMEOUT_SECONDS` and the CLI silently did not. That is not a
+#: cosmetic split: the negative-controls harness runs the CLI, so on
+#: 2026-08-13 the controls ran with a 120s limit against a mesh the master was
+#: running at 300s -- and the Azure leg, which takes 54s and 33s per
+#: invocation across two rounds, failed its *positive* control while answering
+#: the master perfectly. A control that runs a different configuration from the
+#: thing it is controlling is not a control.
+#:
+#: This module already exists to be the single definition of what a peer is,
+#: for exactly this reason, and the timeout is part of that definition.
+DEFAULT_TIMEOUT_SECONDS = 120.0
+
+
+def default_timeout_seconds() -> float:
+    try:
+        return float(os.getenv("RESEARCH_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS))
+    except ValueError:
+        return DEFAULT_TIMEOUT_SECONDS
+
+
 def endpoint_for(cloud: str) -> str:
     """Where ``cloud``'s researcher agent lives, defaulting to the local mesh."""
     env_var, default = CLOUD_ENDPOINTS[cloud]
@@ -132,10 +156,12 @@ def build_participants(
 
 __all__ = [
     "CLOUD_ENDPOINTS",
+    "DEFAULT_TIMEOUT_SECONDS",
     "DraftSource",
     "Participant",
     "auth_mode",
     "build_participants",
     "credentials_for",
+    "default_timeout_seconds",
     "endpoint_for",
 ]

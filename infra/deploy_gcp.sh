@@ -353,6 +353,14 @@ ensure_controls_job() {
   vars="$(peer_env | paste -sd'@' -)"
   [[ -z "$vars" ]] && { echo "wire the peers before running controls" >&2; exit 1; }
 
+  # The master's settings travel with it. A control that runs a different
+  # configuration from the thing it is controlling is not a control -- measured
+  # on 2026-08-13, when the job ran a 120s per-leg limit against a mesh the
+  # master was running at 300s and the Azure leg failed its *positive* control
+  # while answering the master perfectly.
+  vars="${vars}@RESEARCH_TIMEOUT_SECONDS=${RESEARCH_TIMEOUT_SECONDS}"
+  vars="${vars}@RESEARCH_JUDGE_MODE=${JUDGE_MODE}"
+
   gcloud run jobs deploy "$CONTROLS_JOB" \
     --image "$(built_image)" \
     --region "$REGION" --project "$PROJECT" \

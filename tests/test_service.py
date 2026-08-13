@@ -398,3 +398,28 @@ def test_the_run_id_is_in_the_api_response(client):
     """So a caller can quote it back when asking what happened."""
     payload = client.post("/api/research", json=brief()).json()
     assert payload["run_id"]
+
+
+def test_both_entry_points_share_one_timeout(monkeypatch):
+    """The CLI and the master must not disagree about how long a leg may take.
+
+    The CLI took its timeout from an argparse default of 120 while the master
+    read `RESEARCH_TIMEOUT_SECONDS`, so raising the master's limit left the
+    negative-controls harness -- which runs the CLI -- on the old one. Measured
+    2026-08-13: the Azure leg failed its positive control at 120s while
+    answering the master, at 300s, perfectly. A control that runs a different
+    configuration from the thing it controls is not a control.
+    """
+    from coordinator.cli import build_parser
+    from coordinator.participants import default_timeout_seconds
+
+    monkeypatch.setenv("RESEARCH_TIMEOUT_SECONDS", "300")
+    assert default_timeout_seconds() == 300.0
+    assert build_parser().parse_args(["a topic"]).timeout_seconds == 300.0
+
+
+def test_a_junk_timeout_falls_back_rather_than_crashing_the_mesh(monkeypatch):
+    from coordinator.participants import DEFAULT_TIMEOUT_SECONDS, default_timeout_seconds
+
+    monkeypatch.setenv("RESEARCH_TIMEOUT_SECONDS", "soon")
+    assert default_timeout_seconds() == DEFAULT_TIMEOUT_SECONDS
