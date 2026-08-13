@@ -72,6 +72,13 @@ class Draft(BaseModel):
     body: str
     observed_at: datetime
     latency_ms: float = Field(ge=0)
+    #: Which round of the judge loop produced this draft. 1 is a first attempt;
+    #: anything higher means the judge sent it back with a critique and this is
+    #: the rewrite. Carried on the draft rather than derived, because the audit's
+    #: most useful question is per-cloud: *how many rounds did this model need to
+    #: clear the bar*, which is a measurement in a way that one blind score is
+    #: not.
+    round: int = Field(default=1, ge=1)
 
     @property
     def word_count(self) -> int:

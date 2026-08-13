@@ -12,21 +12,30 @@ leg -- which is why the per-participant timeout matters more than it looks.
 """
 
 import asyncio
+import inspect
 import logging
 from datetime import UTC, datetime
 from time import perf_counter
 
 from coordinator import trace
 from coordinator.errors import AdapterError, FailureKind
-from coordinator.judge import RubricJudge
+from coordinator.judge import (
+    RubricJudge,
+    critique_for,
+    needs_revision,
+)
+from coordinator.judge import max_rounds as judge_max_rounds
+from coordinator.judge import pass_mark as judge_pass_mark
 from coordinator.models import (
+    MAX_TOTAL,
     Draft,
     ResearchRequest,
     ResearchRun,
     TraceStep,
+    Verdict,
     new_run_id,
 )
-from coordinator.participants import Participant
+from coordinator.participants import Participant, Revision
 
 log = logging.getLogger("mesh")
 
@@ -38,12 +47,19 @@ class ResearchMesh:
         *,
         judge=None,
         timeout_seconds: float = 120,
+        max_rounds: int | None = None,
+        pass_mark: float | None = None,
     ) -> None:
         if not participants:
             raise ValueError("a mesh needs at least one participant")
         self._participants = participants
         self._judge = judge or RubricJudge()
         self._timeout_seconds = timeout_seconds
+        # `max_rounds=1` is the pre-loop behaviour exactly -- fan out, judge,
+        # stop -- and is the control any claim about the loop has to be
+        # compared against.
+        self._max_rounds = max_rounds if max_rounds is not None else judge_max_rounds()
+        self._pass_mark = pass_mark if pass_mark is not None else judge_pass_mark()
 
     async def run(self, request: ResearchRequest) -> ResearchRun:
         started = perf_counter()
@@ -70,27 +86,125 @@ class ResearchMesh:
                 for participant in self._participants
             )
         )
-        drafts = [draft for draft in gathered if draft is not None]
+        drafts = {draft.source: draft for draft in gathered if draft is not None}
 
-        # Timed separately from the legs. Judging is the only step after the
-        # barrier, so it is invisible in every per-leg figure and shows up in
-        # `elapsed_ms` as an unexplained gap -- which is tolerable while the
-        # rubric judge takes microseconds and misleading the moment a model
-        # takes the seat, because then the slowest thing in the run is the step
-        # with no evidence behind it.
-        judge_started_at = datetime.now(UTC)
-        judge_started = perf_counter()
-        verdict = await self._judge.judge(request, drafts)
-        verdict.started_at = judge_started_at
-        verdict.elapsed_ms = (perf_counter() - judge_started) * 1000
+        verdict = await self._judge_drafts(request, drafts, run_id)
+        rounds = [verdict]
+        #: Each source's score at the point it was last sent back, so a rewrite
+        #: that did not help can be recognised. See the convergence guard below.
+        sent_back_at: dict[str, float] = {}
+
+        # The loop. Everything above is round 1; each pass below sends the
+        # drafts that did not clear the bar back to *their own* cloud with the
+        # judge's critique, and re-judges the whole field.
+        #
+        # Only the failures are revised. Rewriting a draft that already passed
+        # is not free -- models asked to improve something good routinely
+        # return something worse -- and the point of the loop is to lift the
+        # floor, not to churn the ceiling.
+        #
+        # Re-judging *everything* rather than just the rewrites is deliberate
+        # and costs a judge call: the rubric is comparative on rank and the
+        # model judge sees all drafts at once, so a verdict over a mixed field
+        # of old and new drafts is the only one that is internally consistent.
+        for round_number in range(2, self._max_rounds + 1):
+            failing = needs_revision(verdict, mark=self._pass_mark)
+            if not failing:
+                break
+
+            # Two guards, and both were found by running the loop rather than
+            # by reasoning about it.
+            #
+            # **Convergence.** A source whose rewrite scored no better than the
+            # draft it replaced is not asked again. Without this the loop
+            # always runs to `max_rounds`, because "below the bar" is a
+            # standing condition and nothing about being asked twice makes a
+            # model that cannot clear it clear it. The `direct` brain exposes
+            # this immediately -- its draft is byte-identical every round -- but
+            # it is not a test artefact: a small model on a hard brief does the
+            # same thing more slowly and more expensively.
+            #
+            # **Capability.** A source whose `research` does not accept a
+            # revision is left alone. Any A2A server can answer this brief,
+            # which is the point of using a standard protocol, and one that
+            # never heard of this repo cannot be sent a critique. Calling it
+            # with one raises a TypeError that would surface as a leg failure
+            # on a leg that is working perfectly.
+            candidates = []
+            for entry in failing:
+                if entry.source not in drafts:
+                    continue
+                if not self._accepts_revision(entry.source):
+                    continue
+                previous = sent_back_at.get(entry.source)
+                if previous is not None and entry.total <= previous:
+                    log.info(
+                        "run %s round %d: %s scored %.1f after a rewrite from %.1f; "
+                        "not asking again",
+                        run_id,
+                        round_number,
+                        entry.source,
+                        entry.total,
+                        previous,
+                    )
+                    continue
+                candidates.append(entry)
+
+            if not candidates:
+                break
+
+            revisions = {
+                entry.source: Revision(
+                    previous=drafts[entry.source].body,
+                    critique=critique_for(entry),
+                    score=entry.total,
+                    maximum=MAX_TOTAL,
+                    round=round_number,
+                )
+                for entry in candidates
+            }
+            for entry in candidates:
+                sent_back_at[entry.source] = entry.total
+
+            log.info(
+                "run %s round %d: %s below %.1f, sending back",
+                run_id,
+                round_number,
+                ", ".join(f"{name}={revisions[name].score:.1f}" for name in revisions),
+                self._pass_mark,
+            )
+
+            by_name = {participant.name: participant for participant in self._participants}
+            revised = await asyncio.gather(
+                *(
+                    self._call(
+                        by_name[name], request, failures, traces, run_id, revision=revision
+                    )
+                    for name, revision in revisions.items()
+                    if name in by_name
+                )
+            )
+            # A leg that failed on a rewrite keeps the draft it already had.
+            # Losing a scored draft because its *improvement* timed out would
+            # make the loop able to make a run worse, which is the one thing a
+            # quality loop must not do.
+            for draft in revised:
+                if draft is not None:
+                    drafts[draft.source] = draft
+
+            verdict = await self._judge_drafts(request, drafts, run_id)
+            rounds.append(verdict)
+
+        drafts_final = list(drafts.values())
 
         log.info(
-            "run %s judged by %s in %.0fms: winner %s, %d draft(s), %d failure(s)%s",
+            "run %s final: judged by %s, winner %s after %d round(s), "
+            "%d draft(s), %d failure(s)%s",
             run_id,
             verdict.judge,
-            verdict.elapsed_ms,
             verdict.winner or "none",
-            len(drafts),
+            len(rounds),
+            len(drafts_final),
             len(failures),
             "".join(f" | warning: {warning}" for warning in verdict.warnings),
         )
@@ -105,12 +219,62 @@ class ResearchMesh:
             auth_modes={
                 participant.name: participant.auth for participant in self._participants
             },
-            drafts=drafts,
+            drafts=drafts_final,
             failures=failures,
             traces=traces,
             verdict=verdict,
+            rounds=rounds,
             elapsed_ms=(perf_counter() - started) * 1000,
         )
+
+    def _accepts_revision(self, name: str) -> bool:
+        """Whether this participant's source can be sent a revision at all.
+
+        Checked by signature rather than by catching TypeError, because a
+        TypeError raised *inside* a source that does accept revisions would be
+        swallowed by the catch and reported as "cannot revise" -- turning a real
+        bug into a silently shortened loop.
+        """
+        for participant in self._participants:
+            if participant.name != name:
+                continue
+            try:
+                signature = inspect.signature(participant.source.research)
+            except (TypeError, ValueError):
+                return False
+            parameters = list(signature.parameters.values())
+            if any(p.kind is inspect.Parameter.VAR_POSITIONAL for p in parameters):
+                return True
+            if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters):
+                return True
+            return len(parameters) >= 2
+        return False
+
+    async def _judge_drafts(
+        self, request: ResearchRequest, drafts: dict[str, Draft], run_id: str
+    ) -> "Verdict":
+        """Judge the current field, timing the call.
+
+        Judging is the only step after the barrier, so it is invisible in every
+        per-leg figure and shows up in `elapsed_ms` as an unexplained gap --
+        tolerable while the rubric takes microseconds, misleading the moment a
+        model takes the seat and becomes the slowest thing in the run. With a
+        loop there is now more than one of these, so each carries its own.
+        """
+        started_at = datetime.now(UTC)
+        started = perf_counter()
+        verdict = await self._judge.judge(request, list(drafts.values()))
+        verdict.started_at = started_at
+        verdict.elapsed_ms = (perf_counter() - started) * 1000
+        log.info(
+            "run %s judged by %s in %.0fms: winner %s%s",
+            run_id,
+            verdict.judge,
+            verdict.elapsed_ms,
+            verdict.winner or "none",
+            "".join(f" | warning: {warning}" for warning in verdict.warnings),
+        )
+        return verdict
 
     async def _call(
         self,
@@ -119,6 +283,7 @@ class ResearchMesh:
         failures: dict[str, str],
         traces: dict[str, list[TraceStep]],
         run_id: str,
+        revision=None,
     ) -> Draft | None:
         # The trace is opened here rather than inside the client stacks because
         # this is the only scope that spans all three places a leg makes an
@@ -129,7 +294,12 @@ class ResearchMesh:
         with trace.collect() as leg:
             try:
                 async with asyncio.timeout(self._timeout_seconds):
-                    return await participant.source.research(request)
+                    if revision is None:
+                        # Not `research(request, None)`: a source written before
+                        # the loop takes one argument, and every A2A server that
+                        # is not this repo's is such a source.
+                        return await participant.source.research(request)
+                    return await participant.source.research(request, revision)
             except TimeoutError:
                 failures[participant.name] = AdapterError(
                     FailureKind.TIMEOUT, f"exceeded {self._timeout_seconds}s"
@@ -144,7 +314,13 @@ class ResearchMesh:
                 # Recorded even on the success path's return, which is why this
                 # is a finally and not a line after the try.
                 if leg.steps:
-                    traces[participant.name] = leg.steps
+                    # Extend, never assign. Each round opens a fresh
+                    # `trace.collect()`, so assigning here made round 2's calls
+                    # *replace* round 1's -- a two-round run rendered a timeline
+                    # showing one A2A call per leg, which is the shape of a run
+                    # that never looped. Losing evidence is the one failure this
+                    # layer exists to prevent.
+                    traces.setdefault(participant.name, []).extend(leg.steps)
                 # One line per round trip, to the service log. The store holds
                 # the same steps in more detail, but the store is one file on a
                 # mounted bucket that a failed write drops with an `OSError` the

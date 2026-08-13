@@ -516,3 +516,74 @@ def load_judge(mode: str | None = None):
     """The judge named by ``mode``, or by ``RESEARCH_JUDGE_MODE``."""
     selected = (mode or judge_mode()).strip().lower()
     return LlmJudge() if selected == "llm" else RubricJudge()
+
+
+# --------------------------------------------------------------------------
+# The loop: what the judge sends back
+# --------------------------------------------------------------------------
+
+#: A draft at or above this total has passed and is not sent back. 25 is the
+#: maximum, so this is "good on four dimensions out of five". Deliberately not
+#: the maximum: a bar nothing can clear turns the loop into a fixed number of
+#: rounds and burns the budget proving it.
+DEFAULT_PASS_MARK = 18.0
+
+#: Including the first. 1 restores the pre-loop behaviour exactly -- fan out,
+#: judge, stop -- which is the control this feature has to be compared against.
+DEFAULT_MAX_ROUNDS = 3
+
+
+def pass_mark() -> float:
+    try:
+        return float(os.getenv("RESEARCH_PASS_MARK", DEFAULT_PASS_MARK))
+    except ValueError:
+        return DEFAULT_PASS_MARK
+
+
+def max_rounds() -> int:
+    try:
+        return max(1, int(os.getenv("RESEARCH_MAX_ROUNDS", DEFAULT_MAX_ROUNDS)))
+    except ValueError:
+        return DEFAULT_MAX_ROUNDS
+
+
+def critique_for(verdict: DraftVerdict, *, weakest: int = 3) -> str:
+    """What one draft is told about itself, worst dimensions first.
+
+    Built from the scores rather than from free text so the deterministic
+    rubric can drive the loop with no model in the path. That matters more than
+    it sounds: it means the whole loop -- gate, critique, rewrite, re-judge --
+    can be exercised end to end without a credential, which is the only way its
+    failure modes get tested before they happen in a deployed run.
+
+    The model judge's own `notes` are appended when it wrote any. They are
+    better feedback than a dimension name and a number, and they are also the
+    part that can be absent, wrong or flattering, so they supplement the scores
+    rather than replacing them.
+    """
+    lines = []
+    ranked = sorted(verdict.scores, key=lambda score: score.score)
+    for score in ranked[:weakest]:
+        detail = f" ({score.rationale})" if score.rationale else ""
+        lines.append(f"- {score.dimension}: {score.score:.1f} of {MAX_DIMENSION_SCORE:.0f}{detail}")
+
+    if verdict.notes:
+        lines.append(f"- reviewer's note: {verdict.notes}")
+    return "\n".join(lines)
+
+
+def needs_revision(verdict: Verdict, *, mark: float | None = None) -> list[DraftVerdict]:
+    """Which drafts did not clear the bar, worst first.
+
+    Returns the *per-draft* verdicts rather than the winner, because the loop
+    is per cloud: a mesh where one model nailed it first time and another
+    needed three attempts is exactly the signal worth keeping, and a global
+    pass/fail throws it away. Sending back only the failures also means the
+    passing draft is not rewritten into something worse, which a
+    revise-everything loop does surprisingly often.
+    """
+    bar = pass_mark() if mark is None else mark
+    return sorted(
+        (draft for draft in verdict.verdicts if draft.total < bar),
+        key=lambda draft: draft.total,
+    )

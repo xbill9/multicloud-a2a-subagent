@@ -64,7 +64,8 @@ def render(run: ResearchRun) -> str:
     header = [
         f'run  {run.run_id}  {run.started_at.isoformat(timespec="seconds")}  "{topic[:60]}"',
         f"     {len(run.participants)} leg(s): {', '.join(run.participants)}"
-        f"   elapsed {run.elapsed_ms:.0f}ms",
+        f"   elapsed {run.elapsed_ms:.0f}ms"
+        + (f"   {run.round_count} round(s)" if run.round_count > 1 else ""),
         "",
     ]
 
@@ -150,6 +151,23 @@ def render(run: ResearchRun) -> str:
         lines.append("  -> the legs overlapped: the run cost about the slowest, not the sum.")
     else:
         lines.append("  -> too close to call at this scale; the legs are too fast to separate.")
+
+    # The loop's trajectory. A cloud that passed first time and one that needed
+    # three attempts are indistinguishable in the final score, and the whole
+    # reason the loop exists is that the difference is the interesting part.
+    if run.round_count > 1:
+        lines.append("")
+        lines.append("  rounds:")
+        for number, judged in enumerate(run.rounds, start=1):
+            scored = ", ".join(
+                f"{entry.source} {entry.total:.1f}"
+                for entry in sorted(judged.verdicts, key=lambda e: e.source)
+            )
+            lines.append(f"    {number}. {scored}   -> {judged.winner or 'no winner'}")
+        for name in sorted(run.participants):
+            used = run.rounds_used(name)
+            if used > 1:
+                lines.append(f"    {name} was sent back {used - 1} time(s)")
 
     for name, failure in run.failures.items():
         lines.append(f"  {name} failed: {failure}")

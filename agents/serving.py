@@ -30,6 +30,7 @@ from agents.common import (
     model_mode,
     wrap_responder,
 )
+from protocol.search import search_summary
 
 Responder = Callable[[str], Awaitable[str]]
 
@@ -116,6 +117,12 @@ def build_app(executor: AgentExecutor, card: AgentCard, *, model: str = "unknown
                 "brain": model_mode(),
                 "model": model,
                 "degraded": degrade(),
+                # Whether this agent researched or recalled, and how
+                # often it looked. The coordinator cannot see a
+                # researcher's outbound search calls -- they happen on
+                # another cloud, outside any trace it opened -- so this
+                # is the only place that fact is observable.
+                "search": search_summary(),
             }
         )
 

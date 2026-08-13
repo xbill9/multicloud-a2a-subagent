@@ -31,6 +31,7 @@ from agents.common import (
     wrap_responder,
 )
 from agents.serving import CallbackExecutor, build_agent_card, build_app
+from protocol.search import search_enabled, web_search
 
 DEFAULT_PORT = 10002
 CLOUD = "aws"
@@ -49,17 +50,21 @@ def model_id() -> str:
 
 
 def _strands_responder():
-    """Native brain: Strands on Bedrock, writing the draft.
+    """Native brain: Strands on Bedrock, writing the draft, with search.
 
-    No tools, for the reason given in the GCP agent: a search tool on one
-    cloud and not the others turns the audit into a comparison of tool access.
+    Strands bundles no web search of its own -- ``strands-agents-tools`` is a
+    separate distribution and carries ``http_request``, not a search API -- so
+    without a shared tool this would be the one cloud researching from recall
+    while the other two retrieved. The tool is the same function all three get;
+    what is native is Strands' own ``@tool`` binding and tool-call loop.
     """
-    from strands import Agent
+    from strands import Agent, tool
     from strands.models import BedrockModel
 
     agent = Agent(
         model=BedrockModel(model_id=model_id()),
         system_prompt=INSTRUCTION,
+        tools=[tool(web_search)] if search_enabled() else [],
     )
 
     async def respond(prompt: str) -> str:

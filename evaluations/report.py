@@ -43,6 +43,12 @@ class ModelRow:
     wins: int = 0
     ties: int = 0
     failures: int = 0
+    #: Attempts this model needed per run. 1 means it cleared the bar first
+    #: time. The loop's own measurement, and a better quality signal than the
+    #: score: a score is one judge's opinion, while "needed three attempts" is
+    #: a count of times that opinion was acted on and the model still fell
+    #: short.
+    rounds: list[int] = field(default_factory=list)
     totals: list[float] = field(default_factory=list)
     latencies: list[float] = field(default_factory=list)
     dimensions: dict[str, list[float]] = field(default_factory=lambda: defaultdict(list))
@@ -54,6 +60,17 @@ class ModelRow:
     @property
     def win_rate(self) -> float | None:
         return self.wins / self.runs if self.runs else None
+
+    @property
+    def mean_rounds(self) -> float | None:
+        return sum(self.rounds) / len(self.rounds) if self.rounds else None
+
+    @property
+    def first_pass_rate(self) -> float | None:
+        """How often this model cleared the bar without being sent back."""
+        if not self.rounds:
+            return None
+        return sum(1 for used in self.rounds if used == 1) / len(self.rounds)
 
     @property
     def mean_total(self) -> float | None:
@@ -123,6 +140,7 @@ def aggregate(runs: list[tuple], *, narrow_margin: float = 1.0) -> Audit:
             )
             row.runs += 1
             row.latencies.append(draft.latency_ms)
+            row.rounds.append(draft.round)
 
             verdict = by_source.get(draft.source)
             if verdict is not None:
@@ -168,20 +186,25 @@ def render(audit: Audit, *, min_runs: int = DEFAULT_MIN_RUNS) -> str:
         "",
     ]
 
-    header = f"{'cloud/model':<34}{'runs':>5}{'wins':>6}{'ties':>6}{'win%':>7}{'score':>8}{'ms':>9}"
+    header = (
+        f"{'cloud/model':<34}{'runs':>5}{'wins':>6}{'ties':>6}{'win%':>7}"
+        f"{'score':>8}{'1st%':>7}{'rnds':>6}{'ms':>9}"
+    )
     lines += [header, "-" * len(header)]
 
     for row in audit.rows:
         if row.runs < min_runs:
             lines.append(
                 f"{row.key:<34}{row.runs:>5}{'':>6}{'':>6}"
-                f"{'  withheld':>7}{'':>8}{'':>9}"
+                f"{'  withheld':>7}{'':>8}{'':>7}{'':>6}{'':>9}"
             )
             continue
         lines.append(
             f"{row.key:<34}{row.runs:>5}{row.wins:>6}{row.ties:>6}"
             f"{row.win_rate * 100:>6.0f}%"
             f"{row.mean_total:>8.1f}"
+            f"{(row.first_pass_rate or 0) * 100:>6.0f}%"
+            f"{(row.mean_rounds or 0):>6.1f}"
             f"{row.mean_latency_ms:>9.0f}"
         )
 
@@ -211,6 +234,9 @@ def _caveats(audit: Audit, min_runs: int) -> list[str]:
         f"  - rows with fewer than {min_runs} runs are withheld, not hidden: "
         f"a win rate over one run is not a win rate",
         "  - direct-brain drafts are excluded; they are canned text, identical on every cloud",
+        "  - 1st% is how often the model cleared the pass mark without being sent "
+        "back; rnds is its mean attempts. Runs recorded before the judge loop "
+        "existed report 1 round, which is what they were",
         "  - this compares these models as configured here -- one prompt, no tools, "
         "one judge. It is not a general benchmark",
     ]
@@ -266,6 +292,8 @@ def main() -> int:
                     "win_rate": row.win_rate,
                     "mean_total": row.mean_total,
                     "mean_latency_ms": row.mean_latency_ms,
+                    "mean_rounds": row.mean_rounds,
+                    "first_pass_rate": row.first_pass_rate,
                     "dimensions": {
                         dimension: row.mean_dimension(dimension)
                         for dimension in RUBRIC_DIMENSIONS

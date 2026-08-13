@@ -44,6 +44,10 @@ RUBRIC_VERSION = 1
 
 MAX_DIMENSION_SCORE = 5.0
 
+#: The best a draft can score: every dimension full marks. Named because the
+#: judge loop compares against it and a bare 25.0 in a prompt is unreadable.
+MAX_TOTAL = MAX_DIMENSION_SCORE * len(RUBRIC_DIMENSIONS)
+
 
 class TraceStep(BaseModel):
     """One HTTP round trip made on one leg's behalf.
@@ -204,7 +208,30 @@ class ResearchRun(BaseModel):
     #: render a flow diagram claiming it did.
     traces: dict[str, list[TraceStep]] = Field(default_factory=dict)
     verdict: Verdict | None = None
+    #: Every round's verdict, oldest first; the last is ``verdict``. This is
+    #: the loop's evidence and the thing the audit reads: a cloud that passed
+    #: first time and a cloud that needed three attempts are indistinguishable
+    #: in a final score and very different models. Empty on runs recorded
+    #: before the loop existed, which `evaluations.report` treats as one round.
+    rounds: list[Verdict] = Field(default_factory=list)
     elapsed_ms: float = Field(ge=0)
+
+    @property
+    def round_count(self) -> int:
+        return max(len(self.rounds), 1)
+
+    def rounds_used(self, source: str) -> int:
+        """How many attempts this cloud made before the loop stopped.
+
+        Read off the drafts rather than counted from the rounds, because a
+        cloud that passed in round 1 was never asked again while the others
+        kept going -- so the number of *global* rounds is not what any one
+        model needed.
+        """
+        for draft in self.drafts:
+            if draft.source == source:
+                return draft.round
+        return 0
 
     @property
     def succeeded(self) -> bool:
@@ -230,6 +257,7 @@ class ResearchRun(BaseModel):
 
 __all__ = [
     "MAX_DIMENSION_SCORE",
+    "MAX_TOTAL",
     "RUBRIC_DIMENSIONS",
     "RUBRIC_VERSION",
     "DimensionScore",

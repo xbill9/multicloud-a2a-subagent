@@ -401,14 +401,41 @@ def test_every_cloud_declares_its_own_name_and_model(module_name):
     assert module.model_id() == "none"
 
 
-@pytest.mark.parametrize("module_name", CLOUD_MODULES)
-def test_no_cloud_gives_its_model_a_tool(module_name):
-    """A search tool on one cloud turns the audit into a comparison of tool access.
+def _body_without_docstring(func) -> str:
+    """The function's code, with its docstring removed.
 
-    Asserted at the source level because the alternative is constructing three
-    vendors' agents, which needs three sets of credentials. Crude, and it would
-    not catch a tool added by some other route -- but it catches the obvious
-    way this drifts, which is somebody adding `tools=[...]` to one leg.
+    These builders explain at length which vendor-native search they are *not*
+    using and why, so a plain source grep for `google_search` finds the
+    argument against it and fails the test that argument exists to support.
+    """
+    import ast
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    node = tree.body[0]
+    body = node.body[1:] if ast.get_docstring(node) is not None else node.body
+    return "\n".join(ast.unparse(statement) for statement in body)
+
+
+@pytest.mark.parametrize("module_name", CLOUD_MODULES)
+def test_every_cloud_gives_its_model_the_same_tool(module_name):
+    """Tool *parity*, which is the inverse of what this test asserted until
+    2026-08-13 and is enforced for the same reason.
+
+    The old rule was that no cloud may have a tool, because a search tool on
+    one leg and not the others turns the audit into a comparison of tool
+    access. The rule was right; the resolution was to remove search everywhere,
+    which left three "researchers" writing from model recall while the rubric
+    scored them on citation markers they had no way to earn honestly.
+
+    So all three have search now, and it is the *same* search:
+    `protocol.search.web_search`, one implementation against one backend. Only
+    Google ships a usable native search tool -- Agent Framework exports a
+    protocol rather than a tool and Strands bundles none -- so per-vendor
+    search would have made this an audit of retrieval products.
+
+    What stays native, and is what the matrix measures, is each framework's own
+    tool binding and tool-call loop.
     """
     module = _cloud_module(module_name)
     builder = {
@@ -416,9 +443,35 @@ def test_no_cloud_gives_its_model_a_tool(module_name):
         "aws": "_strands_responder",
         "azure": "_foundry_agent",
     }[module.CLOUD]
-    source = inspect.getsource(getattr(module, builder))
+    source = _body_without_docstring(getattr(module, builder))
 
-    assert "tools=" not in source, f"{module.CLOUD} gives its model a tool the others lack"
+    assert "tools=" in source, f"{module.CLOUD} gives its model no tool; the others have search"
+    assert "web_search" in source, (
+        f"{module.CLOUD} has a tool that is not the shared web_search. "
+        f"A per-vendor search makes the audit a comparison of retrieval products."
+    )
+    # The native search each vendor offers, named so a future edit that reaches
+    # for one trips here rather than silently unbalancing the comparison. Read
+    # from the body only: these docstrings discuss the vendor tools at length,
+    # explaining precisely why they are not used.
+    for vendor_tool in ("google_search", "enterprise_web_search", "HostedWebSearchTool"):
+        assert vendor_tool not in source, (
+            f"{module.CLOUD} uses {vendor_tool}, which only one vendor has"
+        )
+
+
+def test_search_is_all_on_or_all_off():
+    """There is no per-cloud switch, by construction.
+
+    `RESEARCH_SEARCH_PROVIDER` is read once in `protocol.search` and every
+    agent asks the same function. A per-cloud variable would be the obvious
+    next feature request and the fastest way back to an unbalanced audit.
+    """
+    from protocol import search
+
+    source = inspect.getsource(search)
+    for cloud in ("GCP", "AWS", "AZURE"):
+        assert f"RESEARCH_SEARCH_{cloud}" not in source
 
 
 def test_the_shared_instruction_asks_for_a_brief_not_a_tool_call():

@@ -30,6 +30,7 @@ from agents.common import (
 )
 from agents.serving import build_agent_card, build_app
 from protocol.research import render_draft
+from protocol.search import search_enabled, web_search
 
 DEFAULT_PORT = 10003
 CLOUD = "azure"
@@ -90,11 +91,18 @@ def _foundry_agent():
         model=model_id(),
         credential=DefaultAzureCredential(),
     )
+    # Agent Framework exports ``SupportsWebSearchTool``, which is a protocol a
+    # chat client may declare -- not a tool that can be handed to an agent, and
+    # Foundry's own grounding needs a Bing resource connection created out of
+    # band. So this cloud gets the same shared function as the other two, bound
+    # through Agent Framework's own tool machinery, which is the part that
+    # differs and the part the matrix measures.
     return Agent(
         client=client,
         name=AGENT_NAME,
         description=DESCRIPTION,
         instructions=INSTRUCTION,
+        tools=[web_search] if search_enabled() else [],
         default_options={"store": False},
     )
 

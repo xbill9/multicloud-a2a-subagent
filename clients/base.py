@@ -16,7 +16,7 @@ import httpx
 from coordinator import trace
 from coordinator.errors import AdapterError, FailureKind
 from coordinator.models import Draft, ResearchRequest
-from protocol.research import build_prompt, parse_draft
+from protocol.research import build_prompt, build_revision_prompt, parse_draft
 
 log = logging.getLogger("clients")
 
@@ -142,11 +142,22 @@ class A2AResearchClient:
         """Send one text message over A2A and return the concatenated reply."""
         raise NotImplementedError
 
-    async def research(self, request: ResearchRequest) -> Draft:
+    async def research(self, request: ResearchRequest, revision=None) -> Draft:
         started = perf_counter()
+        prompt = (
+            build_prompt(request)
+            if revision is None
+            else build_revision_prompt(
+                request,
+                revision.previous,
+                revision.critique,
+                score=revision.score,
+                maximum=revision.maximum,
+            )
+        )
         try:
             response_text = await asyncio.wait_for(
-                self._send(build_prompt(request)), timeout=self._timeout_s
+                self._send(prompt), timeout=self._timeout_s
             )
         except TimeoutError as exc:
             raise AdapterError(
@@ -171,7 +182,7 @@ class A2AResearchClient:
             ) from exc
 
         latency_ms = (perf_counter() - started) * 1000
-        return parse_draft(
+        draft = parse_draft(
             response_text,
             request,
             source=self._source,
@@ -179,3 +190,5 @@ class A2AResearchClient:
             latency_ms=latency_ms,
             observed_at=datetime.now(UTC),
         )
+        draft.round = revision.round if revision is not None else 1
+        return draft

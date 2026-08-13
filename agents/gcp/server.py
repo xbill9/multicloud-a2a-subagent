@@ -32,6 +32,7 @@ from agents.common import (
     wrap_responder,
 )
 from protocol.research import render_draft
+from protocol.search import search_enabled, search_summary, web_search
 
 logging.basicConfig(format="[%(levelname)s]: %(message)s", level=logging.INFO)
 
@@ -71,13 +72,17 @@ def _direct_agent():
 
 
 def _llm_agent():
-    """Native brain: Gemini writing the draft through ADK.
+    """Native brain: Gemini writing the draft through ADK, with search.
 
-    No tools. The currency agent needed one because a rate is a lookup; a
-    research brief is the model's own output, and giving one cloud a search
-    tool the others do not have would make the audit a comparison of tool
-    access rather than of models. If search is added later it has to be added
-    to all three, and the audit's history cut at that point.
+    The tool is ``protocol.search.web_search``, the same function the other two
+    clouds get, and *not* ADK's built-in ``google_search``. Using each vendor's
+    own search would make this row Gemini-grounded-against-Google and the AWS
+    row Bedrock-against-nothing, and the audit would report the gap between two
+    retrieval products as a gap between two models.
+
+    What is still native here is the part worth measuring: ADK wraps the plain
+    callable itself and runs its own tool-calling loop, which is a different
+    implementation from Strands' and from Agent Framework's.
     """
     from google.adk.agents import LlmAgent
 
@@ -86,6 +91,7 @@ def _llm_agent():
         name=f"{AGENT_NAME}_gemini",
         description=DESCRIPTION,
         instruction=INSTRUCTION,
+        tools=[web_search] if search_enabled() else [],
     )
 
 
@@ -100,9 +106,17 @@ def _stamped(inner):
     Done this way rather than by asking Gemini to emit the header itself: a
     model that gets its own metadata line wrong misattributes a draft in the
     audit, and a misattributed draft is the one error the audit cannot detect
-    from the inside. Collapsing the inner events into one is safe only because
-    this agent has no tools -- give it any and this needs to forward the
-    non-text events rather than swallow them.
+    from the inside.
+
+    **Only the final response is kept, and that became load-bearing the moment
+    this agent got a tool.** The previous version concatenated the text of every
+    event in the stream, which was correct while the stream held exactly one --
+    and its docstring said so, in as many words, as a warning to whoever added
+    tools. With ``web_search`` attached the stream also carries the model's
+    own commentary around each tool call ("Let me look that up", a summary of
+    what it found), and concatenating those produced a "draft" that opened with
+    the model narrating its research. The rubric would then have scored the
+    narration: structure, concision and coverage all read the whole body.
     """
     from google.adk.agents import BaseAgent
     from google.adk.events import Event
@@ -112,6 +126,11 @@ def _stamped(inner):
         async def _run_async_impl(self, ctx) -> AsyncGenerator:
             texts: list[str] = []
             async for event in inner.run_async(ctx):
+                # Function calls and their results have no text and are skipped
+                # by the `part.text` filter anyway; what has to be excluded
+                # explicitly is the *model text* that accompanies them.
+                if not event.is_final_response():
+                    continue
                 if event.content and event.content.parts:
                     texts.extend(part.text for part in event.content.parts if part.text)
             body = "\n".join(text for text in texts if text)
@@ -153,6 +172,12 @@ def build():
                 "brain": model_mode(),
                 "model": model_id(),
                 "degraded": degrade(),
+                # Whether this agent researched or recalled, and how
+                # often it looked. The coordinator cannot see a
+                # researcher's outbound search calls -- they happen on
+                # another cloud, outside any trace it opened -- so this
+                # is the only place that fact is observable.
+                "search": search_summary(),
             }
         )
 

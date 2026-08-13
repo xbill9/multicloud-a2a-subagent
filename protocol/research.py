@@ -197,3 +197,61 @@ def parse_draft(
         observed_at=observed_at,
         latency_ms=latency_ms,
     )
+
+
+#: What the judge sends back with a draft it did not pass. Kept in `protocol`
+#: because it crosses the wire: the coordinator writes it, a researcher on
+#: another cloud reads it.
+_REVISION_TEMPLATE = """\
+You wrote the draft below in answer to this brief. A reviewer scored it and it
+did not pass. Rewrite it.
+
+The brief, unchanged:
+
+{brief}
+
+The reviewer's assessment of your draft, {score} out of {maximum}:
+
+{critique}
+
+Your previous draft:
+
+---
+{previous}
+---
+
+Rewrite the brief in full. Address every point the reviewer raised. Where the
+reviewer says you lacked specifics or sources, search for them rather than
+inventing them -- and if you search and find nothing, say so in the draft
+instead of filling the gap. Return the rewritten brief and nothing else: no
+covering note, no list of what you changed.\
+"""
+
+
+def build_revision_prompt(
+    request: ResearchRequest,
+    previous: str,
+    critique: str,
+    *,
+    score: float,
+    maximum: float,
+) -> str:
+    """The second and later rounds' prompt: the brief, the draft, the critique.
+
+    The original brief is repeated verbatim rather than summarised, because the
+    researcher is a *stateless* A2A peer -- there is no session, and the round
+    that produced the previous draft is gone. Everything the model needs has to
+    be in this one message.
+
+    The score is included as well as the critique for a reason that showed up
+    immediately: told only "improve the evidence", models add two citations and
+    stop. Told the draft scored 11 of 25, they rewrite. The number carries the
+    magnitude of the problem, which prose hedges.
+    """
+    return _REVISION_TEMPLATE.format(
+        brief=build_prompt(request),
+        previous=previous.strip(),
+        critique=critique.strip() or "No specific feedback was recorded.",
+        score=f"{score:.1f}",
+        maximum=f"{maximum:.0f}",
+    )

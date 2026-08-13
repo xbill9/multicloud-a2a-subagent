@@ -292,3 +292,74 @@ async def test_a_retried_request_does_not_steal_the_first_ones_start_time():
     # `started_at is None`, which reads as an untimed call.
     assert all(step.started_at is not None for step in leg.steps)
     assert all(step.elapsed_ms >= 0 for step in leg.steps)
+
+
+async def test_a_second_round_adds_to_the_trace_rather_than_replacing_it():
+    """Each round opens a fresh `trace.collect()`.
+
+    Assigning the steps rather than extending them made round 2's calls replace
+    round 1's, so a two-round run rendered a timeline showing one A2A call per
+    leg -- the shape of a run that never looped. The judge loop's whole claim is
+    that a draft was sent back; a trace that cannot show the second call cannot
+    support it.
+    """
+    from coordinator.mesh import ResearchMesh
+    from coordinator.models import Draft
+    from coordinator.participants import Participant
+
+    class TracedTwice:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def research(self, request, revision=None):
+            from datetime import UTC, datetime
+
+            self.calls += 1
+            http = httpx.Request("POST", "https://aws.example.com/")
+            await trace.on_request(http)
+            await trace.on_response(httpx.Response(200, request=http))
+            # Weak first, strong second, so the judge sends it back exactly once.
+            body = "too short to score well " * 6 if revision is None else STRONG_BODY
+            return Draft(
+                source="aws",
+                cloud="aws",
+                brain="llm",
+                title="t",
+                body=body,
+                observed_at=datetime.now(UTC),
+                latency_ms=1.0,
+                round=revision.round if revision is not None else 1,
+            )
+
+    source = TracedTwice()
+    run = await ResearchMesh(
+        [Participant(name="aws", source=source, cloud="aws")], max_rounds=3
+    ).run(ResearchRequest(topic="agent-to-agent protocols", max_words=300))
+
+    assert source.calls == 2, "the draft was not sent back"
+    assert len(run.traces["aws"]) == 2, (
+        f"two rounds made two calls; the trace kept {len(run.traces['aws'])}"
+    )
+
+
+STRONG_BODY = """\
+# Agent-to-agent protocols in 2026
+
+## Adoption
+
+The A2A specification reached v1.0 in 2025 and is implemented by Google's ADK,
+Microsoft's Agent Framework and AWS Bedrock AgentCore [1]. The Linux Foundation
+took stewardship in 2025 (per the announcement) and the registry listed 1,400
+agents by March 2026 [2].
+
+## Interop
+
+- Discovery is privileged separately from invocation on all three clouds [3]
+- AgentCore strips the A2A-Version header, per the 2026 conformance notes [4]
+- ADK to_a2a() advertises the bind address, according to issue 812
+
+## Cost
+
+Hosted runtimes answered in 18.8-25.1 s against 1.7-2.1 s for a container, a
+10x gap (source: cross-cloud rollup, 2026). See https://example.org/rollup.
+"""

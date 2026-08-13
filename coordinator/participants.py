@@ -38,7 +38,32 @@ CLOUD_ENDPOINTS: dict[str, tuple[str, str]] = {
 
 
 class DraftSource(Protocol):
-    async def research(self, request: ResearchRequest) -> Draft: ...
+    #: ``revision`` carries the previous draft and the judge's critique when
+    #: this is a second or later round. Optional rather than a separate method
+    #: so a source that does not implement the loop -- an in-process stub, a
+    #: third-party A2A server that never heard of this repo -- keeps working
+    #: unchanged and simply answers the brief again.
+    async def research(
+        self, request: ResearchRequest, revision: "Revision | None" = None
+    ) -> Draft: ...
+
+
+@dataclass(frozen=True)
+class Revision:
+    """One draft sent back for another round, with the reason.
+
+    Crosses the wire as prose inside the next prompt -- see
+    ``protocol.research.build_revision_prompt``. There is no session on the far
+    side: a researcher is a stateless A2A peer, so the previous draft has to
+    travel with the request that asks for its replacement.
+    """
+
+    previous: str
+    critique: str
+    score: float
+    maximum: float
+    #: The round being *requested*. 2 is the first rewrite.
+    round: int
 
 
 @dataclass(frozen=True)

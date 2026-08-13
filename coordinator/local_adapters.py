@@ -41,7 +41,7 @@ class CannedDraftAdapter:
         self._delay_ms = delay_ms
         self._failure = failure
 
-    async def research(self, request: ResearchRequest) -> Draft:
+    async def research(self, request: ResearchRequest, revision=None) -> Draft:
         started = perf_counter()
         if self._delay_ms:
             await asyncio.sleep(self._delay_ms / 1000)
@@ -56,4 +56,5 @@ class CannedDraftAdapter:
             body=self._body,
             observed_at=datetime.now(UTC),
             latency_ms=(perf_counter() - started) * 1000,
+            round=revision.round if revision is not None else 1,
         )
