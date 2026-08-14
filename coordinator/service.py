@@ -74,6 +74,7 @@ from coordinator.participants import (
 )
 from coordinator.timeline import render as render_timeline
 from evaluations import feedback as feedback_store
+from evaluations import panel as panel_view
 from evaluations.report import aggregate
 from evaluations.report import render as render_audit
 from evaluations.store import load as load_runs
@@ -649,6 +650,25 @@ async def calibration(request):
     return JSONResponse(result)
 
 
+async def panel(request):
+    """What the panel buys over any one cloud in it.
+
+    The project's actual claim, and not a benchmark: a brief answered by three
+    clouds beats the same brief answered by any one of them. Rotation says a
+    panel is justified, regret says what committing to one would cost, and
+    availability says how often one would have left you with nothing.
+    """
+    try:
+        runs = [run for _recorded, run in load_runs()]
+    except OSError as exc:
+        return PlainTextResponse(f"evaluation store unreadable: {exc}", status_code=503)
+
+    summary = panel_view.summarise(runs)
+    if request.query_params.get("format") == "json":
+        return JSONResponse(summary)
+    return PlainTextResponse(panel_view.render(summary))
+
+
 async def audit(request):
     try:
         text = render_audit(aggregate(list(load_runs())))
@@ -672,6 +692,7 @@ app = Starlette(
         Route("/api/source", source_fetch),
         Route("/api/feedback", feedback, methods=["GET", "POST"]),
         Route("/api/calibration", calibration),
+        Route("/api/panel", panel),
         Route("/api/audit", audit),
     ]
 )
