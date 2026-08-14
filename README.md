@@ -59,6 +59,11 @@ hand routing to a model and it may ask two of three, or rephrase the brief per
 cloud, and `evaluations/` stops measuring the models and starts measuring the
 router.
 
+**[`docs/RUNBOOK.md`](docs/RUNBOOK.md) is the operating manual** — where it is
+deployed, how to test it at five levels of cost, how to read the results, and
+which claims on this page are measured versus still open. This README is the
+argument; that is the manual.
+
 ## Status: read this before anything else
 
 **Deployed on all three clouds with models in the path, 2026-08-13.** The
