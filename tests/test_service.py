@@ -532,3 +532,45 @@ def test_the_page_serves_the_debug_tabs(client):
     for tab in ("flow", "reviews", "wire"):
         assert f'data-tab="{tab}"' in body
         assert f'id="tab-{tab}"' in body
+
+
+def test_the_pages_javascript_parses():
+    """A syntax error in the inline script is a blank page with a console
+    message nobody sees.
+
+    The page is a string in a Python module, so nothing type-checks it, nothing
+    bundles it, and the test suite happily passes with it broken. `node --check`
+    is the cheapest thing that would have caught that, and this repo has
+    carried "served, not rendered" as a known gap for weeks.
+    """
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    from coordinator.frontend import PAGE
+
+    scripts = re.findall(r"<script>(.*?)</script>", PAGE, re.DOTALL)
+    assert scripts, "the page has no script block"
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed; cannot syntax-check the page")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "page.js"
+        path.write_text("\n".join(scripts))
+        result = subprocess.run(
+            [node, "--check", str(path)], capture_output=True, text=True, check=False
+        )
+    assert result.returncode == 0, result.stderr[-2000:]
+
+
+def test_every_element_the_script_reaches_for_exists():
+    """`$('flow')` on an id that is not in the markup is a silent no-op that
+    renders an empty tab."""
+    from coordinator.frontend import PAGE
+
+    for element_id in ("tab-flow", "tab-reviews", "tab-wire", "flow", "reviews", "wire", "flowNav"):
+        assert f'id="{element_id}"' in PAGE, element_id
