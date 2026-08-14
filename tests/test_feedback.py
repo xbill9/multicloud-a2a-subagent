@@ -11,6 +11,10 @@ number that can say the instrument is wrong.
 from evaluations import feedback
 
 
+def ranked(order: list[str], complete: bool = True) -> feedback.JudgeRanking:
+    return feedback.JudgeRanking(ranking=order, complete=complete)
+
+
 def review(run_id: str, winner: str | None = None, **kwargs) -> feedback.HumanReview:
     return feedback.HumanReview(run_id=run_id, winner=winner, **kwargs)
 
@@ -71,7 +75,7 @@ def test_a_torn_final_line_does_not_hide_the_rest(tmp_path):
 def test_agreement_is_none_rather_than_zero_when_nobody_has_looked(tmp_path):
     """"The judge and a human never agree" and "nobody has looked" are opposite
     claims and must not render as the same number."""
-    result = feedback.agreement({"run-1": ["aws"]}, path=tmp_path / "none.jsonl")
+    result = feedback.agreement({"run-1": ranked(["aws"])}, path=tmp_path / "none.jsonl")
 
     assert result["reviewed"] == 0
     assert result["agreement_rate"] is None
@@ -83,7 +87,7 @@ def test_agreement_counts_only_runs_the_judge_also_ranked(tmp_path):
     feedback.record(review("run-2", winner="gcp"), path=path)
     feedback.record(review("ghost", winner="aws"), path=path)
 
-    result = feedback.agreement({"run-1": ["aws"], "run-2": ["azure"]}, path=path)
+    result = feedback.agreement({"run-1": ranked(["aws"]), "run-2": ranked(["azure"])}, path=path)
 
     assert result["agreed"] == 1
     assert result["disagreed"] == 1
@@ -110,7 +114,7 @@ def test_citation_verdicts_are_tallied(tmp_path):
         path=path,
     )
 
-    result = feedback.agreement({"run-1": ["aws"]}, path=path)
+    result = feedback.agreement({"run-1": ranked(["aws"])}, path=path)
 
     assert result["citations"]["verified"] == 1
     assert result["citations"]["fabricated"] == 1
@@ -149,7 +153,7 @@ def test_concordance_counts_every_pair_not_just_the_winner(tmp_path):
 
     # The judge agrees on the winner and on aws>gcp and aws>azure, but flips
     # the other two. One run, three pairs, two concordant.
-    result = feedback.agreement({"run-1": ["aws", "azure", "gcp"]}, path=path)
+    result = feedback.agreement({"run-1": ranked(["aws", "azure", "gcp"])}, path=path)
 
     assert result["agreed"] == 1
     assert result["pairs_compared"] == 3
@@ -173,7 +177,7 @@ def test_a_judge_that_is_exactly_backwards_scores_zero(tmp_path):
         path=path,
     )
 
-    result = feedback.agreement({"run-1": ["azure", "gcp", "aws"]}, path=path)
+    result = feedback.agreement({"run-1": ranked(["azure", "gcp", "aws"])}, path=path)
 
     assert result["concordance"] == 0.0
 
@@ -184,8 +188,61 @@ def test_concordance_is_none_when_nobody_ranked_anything(tmp_path):
     path = tmp_path / "feedback.jsonl"
     feedback.record(review("run-1", winner="aws"), path=path)
 
-    result = feedback.agreement({"run-1": ["aws", "gcp"]}, path=path)
+    result = feedback.agreement({"run-1": ranked(["aws", "gcp"])}, path=path)
 
     assert result["agreed"] == 1
     assert result["pairs_compared"] == 0
     assert result["concordance"] is None
+
+
+def test_a_run_that_lost_a_leg_cannot_calibrate(tmp_path):
+    """And is excluded loudly rather than quietly shrinking the sample.
+
+    Measured 2026-08-14: three consecutive runs lost the GCP leg to one defect
+    in the logging setup. Every pair they could contribute was `aws` against
+    `azure` -- the same comparison repeated -- so counting them would have
+    measured one matchup several times and reported it as coverage, while
+    saying nothing about how the judge ranks the missing cloud against
+    anything.
+
+    A leg is never missing at random. That is what makes this different from a
+    small sample.
+    """
+    path = tmp_path / "feedback.jsonl"
+    for run_id in ("whole", "degraded"):
+        feedback.record(
+            review(
+                run_id,
+                winner="aws",
+                drafts=[
+                    feedback.DraftFeedback(source="aws", rank=1),
+                    feedback.DraftFeedback(source="azure", rank=2),
+                ],
+            ),
+            path=path,
+        )
+
+    result = feedback.agreement(
+        {
+            "whole": ranked(["aws", "azure"], complete=True),
+            "degraded": ranked(["aws", "azure"], complete=False),
+        },
+        path=path,
+    )
+
+    assert result["reviewed"] == 1, "the degraded run was counted"
+    assert result["pairs_compared"] == 1
+    assert result["excluded_incomplete_runs"] == 1
+
+
+def test_the_exclusion_is_visible_rather_than_silent(tmp_path):
+    """A sample that shrank without saying so is worse than a small one: the
+    reader believes they have the coverage they asked for."""
+    path = tmp_path / "feedback.jsonl"
+    feedback.record(review("degraded", winner="aws"), path=path)
+
+    result = feedback.agreement({"degraded": ranked(["aws"], complete=False)}, path=path)
+
+    assert result["reviewed"] == 0
+    assert result["concordance"] is None
+    assert result["excluded_incomplete_runs"] == 1

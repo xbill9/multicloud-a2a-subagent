@@ -668,8 +668,8 @@ async def test_a_draft_carries_the_prompt_version_that_produced_it():
     matters is what comes out on the wire.
     """
     from agents.common import INSTRUCTION_VERSION, direct_reply, wrap_responder
-    from protocol.research import build_prompt, parse_header
     from protocol.models import ResearchRequest
+    from protocol.research import build_prompt, parse_header
 
     responder = wrap_responder(direct_reply, agent="aws", model="nova")
     reply = await responder(build_prompt(ResearchRequest(topic="solid-state batteries")))

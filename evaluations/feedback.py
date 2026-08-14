@@ -124,12 +124,31 @@ def _pairs(order: list[str]) -> dict[tuple[str, str], int]:
     return out
 
 
-def agreement(judge_rankings: dict[str, list[str]], path: Path | None = None) -> dict:
+class JudgeRanking(BaseModel):
+    """What the judge decided on one run, and whether that run was whole."""
+
+    ranking: list[str] = Field(default_factory=list)
+    #: Every participant answered. Only a complete run may calibrate.
+    complete: bool = True
+
+
+def agreement(
+    judge_rankings: dict[str, JudgeRanking], path: Path | None = None
+) -> dict:
     """How far a human and the judge agree, on two measures.
 
-    ``judge_rankings`` maps run_id -> the judge's ranking, best first. Read by
-    the caller from the run store; this module deliberately does not import it,
-    so feedback stays readable without the runs beside it.
+    ``judge_rankings`` maps run_id -> what the judge decided. Read by the caller
+    from the run store; this module deliberately does not import it, so feedback
+    stays readable without the runs beside it.
+
+    **An incomplete run cannot calibrate anything, and is excluded.** A run
+    where a leg timed out is missing a draft, and it is never missing a *random*
+    one -- on 2026-08-14 three consecutive runs lost the GCP leg to the same
+    defect, so every pair they could contribute was `aws` against `azure`, the
+    same comparison repeated. Counting those would have measured one matchup
+    several times and reported it as coverage. The judge already refuses to call
+    a single draft a comparison; this is the same rule one participant further
+    along.
 
     **Winner agreement** is the headline and the weaker of the two. It is one
     bit per run, and with three clouds a coin lands on it a third of the time,
@@ -154,14 +173,21 @@ def agreement(judge_rankings: dict[str, list[str]], path: Path | None = None) ->
     citations = {verdict: 0 for verdict in CITATION_VERDICTS}
 
     seen: set[str] = set()
+    incomplete = 0
     for review in load(path):
-        judge_order = judge_rankings.get(review.run_id)
+        decided = judge_rankings.get(review.run_id)
+        judge_order = decided.ranking if decided is not None else None
         for draft in review.drafts:
             for citation in draft.citations:
                 if citation.verdict in citations:
                     citations[citation.verdict] += 1
-        if judge_order is None:
+        if decided is None:
             unreviewed += 1
+            continue
+        if not decided.complete:
+            # Reviewed, and deliberately not counted. Reported so the exclusion
+            # is visible rather than silently shrinking the sample.
+            incomplete += 1
             continue
         seen.add(review.run_id)
 
@@ -199,6 +225,7 @@ def agreement(judge_rankings: dict[str, list[str]], path: Path | None = None) ->
         "concordance": (concordant / pairs) if pairs else None,
         "citations": citations,
         "reviews_for_unknown_runs": unreviewed,
+        "excluded_incomplete_runs": incomplete,
     }
 
 
@@ -207,6 +234,7 @@ __all__ = [
     "CitationFeedback",
     "DraftFeedback",
     "HumanReview",
+    "JudgeRanking",
     "agreement",
     "for_run",
     "load",

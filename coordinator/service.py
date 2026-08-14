@@ -587,8 +587,14 @@ async def calibration(request):
         # The judge's whole ranking, not just its winner: a review yields one
         # comparison per pair of drafts, and throwing away all but the top one
         # wastes most of what the reviewer just did.
+        # `complete` travels with the ranking: a run that lost a leg cannot
+        # calibrate a scorer, and the exclusion belongs in the aggregate rather
+        # than in whoever is reading it.
         winners = {
-            run.run_id: (run.verdict.ranking if run.verdict else [])
+            run.run_id: feedback_store.JudgeRanking(
+                ranking=(run.verdict.ranking if run.verdict else []),
+                complete=run.complete,
+            )
             for _recorded, run in load_runs()
         }
     except OSError as exc:
