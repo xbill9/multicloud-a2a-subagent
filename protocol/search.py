@@ -32,6 +32,7 @@ another *mesh member*, mint a cross-cloud credential, or judge. Calling a
 search endpoint is what having a tool means.
 """
 
+import contextvars
 import os
 import re
 from html import unescape
@@ -186,15 +187,38 @@ async def _brave(query: str, max_results: int) -> list[dict]:
 
 _BACKENDS = {"duckduckgo": _duckduckgo, "tavily": _tavily, "brave": _brave}
 
-#: Counts searches per process, reported on the agent's /health and in the
-#: serving header. The coordinator cannot see a researcher's outbound calls --
-#: they happen on another cloud, outside any trace this process opens -- so
-#: this is the only evidence that a draft was researched rather than recalled.
-_searches = 0
+#: How many searches one draft may make.
+#:
+#: A prompt can ask for restraint and this guarantees it. Instruction v2 says
+#: "one search for each specific figure, date or claim", and on 2026-08-14
+#: Gemini read that literally and made **24 searches for a 300-word brief**.
+#: Every tool result goes back to the model, so that is 25 Gemini calls in 71
+#: seconds -- about 21 requests a minute from a single brief, against a Vertex
+#: per-minute limit of 60. One runaway draft exhausts the project, and the leg
+#: then fails with 429 RESOURCE_EXHAUSTED or times out retrying.
+#:
+#: The limit is on the *tool* rather than in the prompt because the prompt is
+#: advice and this is arithmetic: whatever the model intends, it cannot spend
+#: more than this.
+SEARCH_BUDGET = int(os.getenv("RESEARCH_SEARCH_BUDGET", "6"))
+
+#: Per request, not per process.
+#:
+#: A module-level counter was wrong the moment two briefs overlapped: an agent
+#: serving concurrently would attribute one draft's searches to another, and
+#: the budget would be shared between drafts that never met. A context variable
+#: is per task and copies into anything the request spawns.
+_used: contextvars.ContextVar[int] = contextvars.ContextVar("search_used", default=0)
 
 
 def search_count() -> int:
-    return _searches
+    """Searches made in the current request's context."""
+    return _used.get()
+
+
+def reset_budget() -> None:
+    """Start a fresh budget for one draft. Called by the serving wrappers."""
+    _used.set(0)
 
 
 async def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
@@ -210,13 +234,21 @@ async def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
     Returns:
         Numbered results, each with a title, a URL and a snippet.
     """
-    global _searches
-
     backend = _BACKENDS.get(search_provider())
     if backend is None:
         return "Search is disabled for this run."
 
-    _searches += 1
+    used = _used.get()
+    if used >= SEARCH_BUDGET:
+        # Reported to the model as an instruction, not an error. A researcher
+        # told only "no" keeps trying; one told to write with what it has stops.
+        return (
+            f"SEARCH BUDGET SPENT. You have made {used} searches, which is this "
+            f"agent's limit for one brief. Write the brief now from what you "
+            f"have already found, and say plainly which points you could not "
+            f"verify. Do not invent sources for them."
+        )
+    _used.set(used + 1)
     # One span per search. This is the half of the picture the coordinator can
     # never see: a researcher's retrieval happens on another cloud, outside any
     # trace this mesh opens, and until now the only evidence it happened at all
@@ -254,13 +286,16 @@ def search_summary() -> dict:
     return {
         "provider": search_provider(),
         "enabled": search_enabled(),
-        "searches": _searches,
+        "budget": SEARCH_BUDGET,
+        "searches": _used.get(),
     }
 
 
 __all__ = [
     "DEFAULT_MAX_RESULTS",
+    "SEARCH_BUDGET",
     "SEARCH_PROVIDERS",
+    "reset_budget",
     "search_count",
     "search_enabled",
     "search_provider",

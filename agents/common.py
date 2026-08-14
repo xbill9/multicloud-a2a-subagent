@@ -26,7 +26,7 @@ import os
 
 from protocol.models import ResearchRequest
 from protocol.research import parse_brief, render_draft
-from protocol.search import search_count
+from protocol.search import reset_budget, search_count
 from protocol.telemetry import span
 
 #: The A2A card name every cloud advertises. Deliberately the same on all
@@ -49,15 +49,22 @@ DESCRIPTION = "An agent that writes a short, sourced research brief on a given t
 #:
 #: 1  the original: be specific, do not invent a citation. Said nothing about
 #:    searching, and two of three models never called the tool they were given.
-#: 2  2026-08-14: search first, and cite what you actually opened.
-INSTRUCTION_VERSION = 2
+#: 2  2026-08-14: search first, and cite what you actually opened. Said "one
+#:    search for each specific figure, date or claim", which Gemini read
+#:    literally and spent on 24 searches for a 300-word brief -- 25 model calls,
+#:    enough to exhaust the project's Vertex quota on its own.
+#: 3  2026-08-14: same requirement, bounded. Names the six-search budget the
+#:    tool now enforces, so the model plans against it instead of being cut off.
+INSTRUCTION_VERSION = 3
 
 INSTRUCTION = (
     "You are a research assistant with a web_search tool. Given a topic, you "
     "write one short research brief and nothing else. "
     "ALWAYS search before you write. Run at least two searches -- one for the "
-    "topic and one for each specific figure, date or claim you intend to state "
-    "-- and write the brief from what the results actually say. "
+    "topic and one for the figures you intend to state -- and write the brief "
+    "from what the results actually say. You have a budget of six searches for "
+    "the whole brief, so search broadly rather than once per sentence; when the "
+    "budget is spent you will be told, and you should write with what you have. "
     "Open with a single markdown H1 title line, then the body under markdown "
     "headings. "
     "Be specific: name organisations, people, systems and figures, give dates, "
@@ -233,6 +240,9 @@ def wrap_responder(inner, *, agent: str, model: str):
         # Delta, not the total: the process counter accumulates across every
         # request the container has ever served, and what the audit needs is
         # what *this* draft cost.
+        # A fresh budget per draft, not per process: two briefs served
+        # concurrently must not share one.
+        reset_budget()
         before = search_count()
         with span(
             "research.draft",

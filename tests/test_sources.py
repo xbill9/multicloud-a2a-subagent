@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 import pytest
 
 from coordinator import sources
+from protocol import search as sources_search
 from coordinator.models import Draft, ResearchRequest, ResearchRun
 
 
@@ -172,3 +173,65 @@ async def test_a_dead_citation_is_a_result_and_not_an_exception():
     assert result["ok"] is False
     assert result["status"] is None
     assert result["reason"]
+
+
+# --------------------------------------------------------------------------
+# The search budget
+# --------------------------------------------------------------------------
+
+
+async def test_the_budget_stops_a_runaway_tool_loop(monkeypatch):
+    """Measured 2026-08-14: Gemini made 24 searches for a 300-word brief.
+
+    Every tool result goes back to the model, so that is 25 calls in 71 seconds
+    -- about 21 requests a minute from one brief, against a Vertex per-minute
+    limit of 60. One runaway draft exhausts the project and the leg then fails
+    with 429 RESOURCE_EXHAUSTED or times out retrying.
+
+    The limit is on the tool rather than in the prompt because the prompt is
+    advice and this is arithmetic.
+    """
+    monkeypatch.setattr(sources_search, "SEARCH_BUDGET", 3)
+    monkeypatch.setenv("RESEARCH_SEARCH_PROVIDER", "duckduckgo")
+
+    async def fake(query, max_results):
+        return [{"title": "t", "url": "https://example.org/x", "snippet": "s"}]
+
+    monkeypatch.setitem(sources_search._BACKENDS, "duckduckgo", fake)
+    sources_search.reset_budget()
+
+    for _ in range(3):
+        assert "SEARCH BUDGET SPENT" not in await sources_search.web_search("q")
+
+    spent = await sources_search.web_search("q")
+    assert "SEARCH BUDGET SPENT" in spent
+    # Told what to do, not merely refused: a researcher told only "no" keeps
+    # trying; one told to write with what it has stops.
+    assert "Write the brief now" in spent
+    assert sources_search.search_count() == 3
+
+
+async def test_the_budget_is_per_request_not_per_process(monkeypatch):
+    """Two briefs served concurrently must not share one budget, and one
+    draft's searches must not be attributed to another."""
+    import asyncio
+
+    monkeypatch.setattr(sources_search, "SEARCH_BUDGET", 2)
+    monkeypatch.setenv("RESEARCH_SEARCH_PROVIDER", "duckduckgo")
+
+    async def fake(query, max_results):
+        await asyncio.sleep(0)
+        return [{"title": "t", "url": "https://example.org/x", "snippet": "s"}]
+
+    monkeypatch.setitem(sources_search._BACKENDS, "duckduckgo", fake)
+
+    async def one_draft() -> int:
+        sources_search.reset_budget()
+        await sources_search.web_search("a")
+        await asyncio.sleep(0)
+        await sources_search.web_search("b")
+        return sources_search.search_count()
+
+    counts = await asyncio.gather(one_draft(), one_draft())
+
+    assert counts == [2, 2], "the two drafts shared a counter"

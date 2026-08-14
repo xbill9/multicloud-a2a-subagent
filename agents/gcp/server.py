@@ -34,6 +34,7 @@ from agents.common import (
 )
 from protocol.research import render_draft
 from protocol.search import (
+    reset_budget,
     search_count,
     search_enabled,
     search_summary,
@@ -144,6 +145,7 @@ def _stamped(inner):
         async def _run_async_impl(self, ctx) -> AsyncGenerator:
             # Delta across this one run, for the reason in `wrap_responder`:
             # the counter is per process and Cloud Run runs many.
+            reset_budget()
             before = search_count()
             texts: list[str] = []
             async for event in inner.run_async(ctx):
