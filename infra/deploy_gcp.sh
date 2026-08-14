@@ -522,37 +522,73 @@ matrix() {
 # mean something.
 probe() {
   local label cloud expect; label="$1"; cloud="$2"; expect="$3"; shift 3
-  local rc=0
   echo
   echo "--- ${label}"
-  gcloud run jobs execute "$CONTROLS_JOB" \
+
+  local execution="" rc=0
+  execution="$(gcloud run jobs execute "$CONTROLS_JOB" \
     --region "$REGION" --project "$PROJECT" --wait --quiet \
     --args="python,-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture,--cloud,${cloud}" \
-    ${1+--update-env-vars "$*"} >/dev/null 2>&1 || rc=$?
+    ${1+--update-env-vars "$*"} \
+    --format='value(metadata.name)' 2>/dev/null)" || rc=$?
 
-  # A control that could not run is not a control that passed. 126 and 127 are
-  # the shell's "cannot execute" and "not found", which is what a broken
-  # entrypoint produces -- and a `deny` probe reads any non-zero exit as the
-  # denial it was hoping for. That is how this harness spent a day reporting
-  # that every negative control passed while no container had started at all.
-  # Checked before the expectation, so it cannot be absorbed by either branch.
-  if [[ "$rc" -eq 126 || "$rc" -eq 127 ]]; then
-    echo "    exit ${rc} -- THE CONTROL DID NOT RUN. The container could not
-    start, so this probe proves nothing either way. Fix the harness before
-    reading any result below."
+  # The verdict comes from the *container's* exit code, never from gcloud's.
+  # Those are three different facts wearing one number -- the mesh denied the
+  # call, the container could not start, or gcloud itself failed -- and this
+  # harness has now been caught reporting a false "denied, as required" for the
+  # second and third of them: a missing `python` in the launcher argv (127) on
+  # 2026-08-12, and an expired gcloud credential (1) on 2026-08-13. Both times
+  # every negative control passed and no leg had been tested at all. The second
+  # was only caught because a *positive* control failed on a leg that had
+  # answered the master minutes earlier.
+  if [[ -z "$execution" ]]; then
+    echo "    THE CONTROL DID NOT RUN -- gcloud exited ${rc} without naming an"
+    echo "    execution (expired credentials? no quota?). Proves nothing either"
+    echo "    way, and nothing below it should be read until it runs."
+    return
+  fi
+
+  # Cloud Logging lags the execution by a second or two.
+  local code="" attempt
+  for attempt in 1 2 3 4 5 6; do
+    code="$(gcloud logging read \
+      "resource.type=cloud_run_job AND labels.\"run.googleapis.com/execution_name\"=${execution}" \
+      --limit 20 --format='value(textPayload)' --project "$PROJECT" --freshness=1h 2>/dev/null \
+      | grep -oE 'Container called exit\([0-9]+\)' | head -1 | grep -oE '[0-9]+' || true)"
+    [[ -n "$code" ]] && break
+    sleep 5
+  done
+
+  if [[ -z "$code" ]]; then
+    echo "    THE CONTROL DID NOT RUN -- no container exit code found for"
+    echo "    ${execution}. Proves nothing either way."
+    return
+  fi
+
+  # 3 is coordinator.cli's NO_DRAFTS_EXIT: the mesh ran, and no cloud answered.
+  # It is the only code that means "denied", and only this CLI can emit it.
+  local answered=0 denied=0
+  [[ "$code" -eq 0 ]] && answered=1
+  [[ "$code" -eq 3 ]] && denied=1
+
+  if [[ "$answered" -eq 0 && "$denied" -eq 0 ]]; then
+    echo "    THE CONTROL DID NOT RUN -- container exit ${code} is neither"
+    echo "    'answered' (0) nor 'no cloud answered' (3), so it is a crash"
+    echo "    rather than a verdict. Proves nothing either way."
     return
   fi
 
   if [[ "$expect" == "deny" ]]; then
-    [[ "$rc" -ne 0 ]] \
-      && echo "    exit ${rc} -- denied, as required" \
-      || echo "    exit 0 -- ANSWERED WITHOUT THE CREDENTIAL. This control failed:
-    the leg's auth mode is a label, not a control."
+    [[ "$denied" -eq 1 ]] \
+      && echo "    container exit ${code} -- denied, as required" \
+      || echo "    container exit ${code} -- ANSWERED WITHOUT THE CREDENTIAL. This
+    control failed: the leg's auth mode is a label, not a control."
   else
-    [[ "$rc" -eq 0 ]] \
-      && echo "    exit 0 -- answered, as required" \
-      || echo "    exit ${rc} -- the POSITIVE control failed; the leg is broken
-    independently of auth, and the denials above prove nothing until it is fixed."
+    [[ "$answered" -eq 1 ]] \
+      && echo "    container exit ${code} -- answered, as required" \
+      || echo "    container exit ${code} -- the POSITIVE control failed; the leg is
+    broken independently of auth, and the denials below prove nothing until it
+    is fixed."
   fi
 }
 

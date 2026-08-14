@@ -134,6 +134,21 @@ def render(run, *, show_drafts: bool = False) -> str:
     return "\n".join(lines)
 
 
+#: Exit code for "the mesh ran and no cloud returned a draft".
+#:
+#: Distinct from 1 on purpose, and the distinction is load-bearing. The
+#: negative-controls harness runs this CLI in a Cloud Run job and reads its
+#: exit code as the verdict: non-zero means the leg was denied. But 1 is also
+#: what a crashed interpreter, an expired gcloud credential and a hundred other
+#: harness failures return -- and on 2026-08-13 this harness reported "denied,
+#: as required" for every negative control twice, once because the container
+#: could not start (127) and once because gcloud's credentials expired
+#: mid-run (1). Both times nothing had been tested.
+#:
+#: A denial has to be a claim only this code can make. 3 is that claim.
+NO_DRAFTS_EXIT = 3
+
+
 async def _run(args) -> int:
     try:
         request = ResearchRequest(
@@ -159,7 +174,7 @@ async def _run(args) -> int:
         record(run)
 
     print(run.model_dump_json(indent=2) if args.as_json else render(run, show_drafts=args.show_drafts))
-    return 0 if run.succeeded else 1
+    return 0 if run.succeeded else NO_DRAFTS_EXIT
 
 
 def main() -> int:

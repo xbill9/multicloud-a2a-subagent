@@ -423,3 +423,20 @@ def test_a_junk_timeout_falls_back_rather_than_crashing_the_mesh(monkeypatch):
 
     monkeypatch.setenv("RESEARCH_TIMEOUT_SECONDS", "soon")
     assert default_timeout_seconds() == DEFAULT_TIMEOUT_SECONDS
+
+
+def test_no_drafts_has_an_exit_code_only_the_cli_can_emit():
+    """A denial must be a claim nothing else can make.
+
+    The negative-controls harness reads this CLI's exit code as the verdict:
+    the mesh ran and no cloud answered means the leg was correctly refused. It
+    returned 1, which is also what a crashed interpreter and an expired gcloud
+    credential return -- and on 2026-08-13 the harness reported "denied, as
+    required" for every negative control twice, once on a container that could
+    not start (127) and once on gcloud credentials that expired mid-run (1).
+    Both times nothing had been tested.
+    """
+    from coordinator.cli import NO_DRAFTS_EXIT
+
+    assert NO_DRAFTS_EXIT == 3
+    assert NO_DRAFTS_EXIT not in (0, 1, 2, 126, 127)
