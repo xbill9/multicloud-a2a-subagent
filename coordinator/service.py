@@ -80,6 +80,7 @@ from evaluations.store import load as load_runs
 from evaluations.store import record, store_path
 from protocol.telemetry import (
     instrument_app,
+    span,
     telemetry_summary,
 )
 from protocol.telemetry import (
@@ -568,13 +569,44 @@ async def feedback(request):
         )
 
     try:
+        # `span` is a sync context manager; the lock is async. Nesting rather
+        # than combining, because `async with a, b` requires both to be async.
         async with _store_lock:
-            feedback_store.record(review)
+            with span(
+                "research.feedback",
+                **{
+                    "research.run_id": review.run_id,
+                    "research.reviewer": review.reviewer,
+                    "research.human_winner": review.winner or "none",
+                },
+            ):
+                feedback_store.record(review)
     except OSError as exc:
         log.error("could not record feedback for %s: %s", review.run_id, exc)
         return JSONResponse({"error": f"could not record: {exc}"}, status_code=503)
 
-    log.info("feedback recorded for run %s by %s", review.run_id, review.reviewer)
+    BUS.publish(
+        "feedback",
+        f"{review.reviewer} reviewed {review.run_id}: "
+        f"would pick {review.winner or 'no one'}"
+        + (f", ranked {' > '.join(review.ranking)}" if review.ranking else "")
+        + (
+            f", {sum(len(d.citations) for d in review.drafts)} citation verdict(s)"
+            if any(d.citations for d in review.drafts)
+            else ""
+        ),
+        run_id=review.run_id,
+        reviewer=review.reviewer,
+        winner=review.winner,
+        ranking=review.ranking,
+    )
+    log.info(
+        "feedback recorded for run %s by %s: winner=%s ranking=%s",
+        review.run_id,
+        review.reviewer,
+        review.winner,
+        review.ranking,
+    )
     return JSONResponse({"recorded": True, "run_id": review.run_id})
 
 
@@ -590,13 +622,25 @@ async def calibration(request):
         # `complete` travels with the ranking: a run that lost a leg cannot
         # calibrate a scorer, and the exclusion belongs in the aggregate rather
         # than in whoever is reading it.
-        winners = {
-            run.run_id: feedback_store.JudgeRanking(
-                ranking=(run.verdict.ranking if run.verdict else []),
+        winners = {}
+        for _recorded, run in load_runs():
+            verdict = run.verdict
+            winners[run.run_id] = feedback_store.JudgeRanking(
+                ranking=(verdict.ranking if verdict else []),
                 complete=run.complete,
+                rubric_version=(verdict.rubric_version if verdict else 0),
+                # Read off the drafts: the run does not carry one prompt
+                # version, the agents do, and a mesh mid-rollout can legitimately
+                # answer with two. The lowest is the honest label for the set.
+                prompt_version=min(
+                    (d.prompt_version for d in run.drafts if d.prompt_version >= 0),
+                    default=0,
+                ),
+                scores={
+                    entry.source: {s.dimension: s.score for s in entry.scores}
+                    for entry in (verdict.verdicts if verdict else [])
+                },
             )
-            for _recorded, run in load_runs()
-        }
     except OSError as exc:
         return JSONResponse({"error": f"evaluation store unreadable: {exc}"}, status_code=503)
 

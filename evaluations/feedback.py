@@ -125,11 +125,42 @@ def _pairs(order: list[str]) -> dict[tuple[str, str], int]:
 
 
 class JudgeRanking(BaseModel):
-    """What the judge decided on one run, and whether that run was whole."""
+    """What the judge decided on one run, and under which version it decided."""
 
     ranking: list[str] = Field(default_factory=list)
     #: Every participant answered. Only a complete run may calibrate.
     complete: bool = True
+    #: Which scorer and which brief produced this. Concordance is reported per
+    #: version, and that is the whole mechanism for showing an improvement: a
+    #: number that moved between two versions is evidence, a single number is a
+    #: snapshot.
+    rubric_version: int = 0
+    prompt_version: int = 0
+    #: source -> dimension -> score, so a disagreement can be attributed to the
+    #: dimension that most likely caused it.
+    scores: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+
+def _blamed_dimension(
+    decided: JudgeRanking, better: str, worse: str
+) -> str | None:
+    """Which dimension most likely put ``better`` above ``worse``.
+
+    A heuristic, and labelled as one: the dimension where the judge's advantage
+    for the winning draft was largest. When a human reverses that pair, this is
+    the dimension whose weighting is the first suspect -- which is what turns a
+    concordance figure into something anyone can act on. "The judge disagrees
+    with people 40% of the time" is a complaint; "it disagrees on `evidence`,
+    and `evidence` counts citation shapes" is a change.
+    """
+    left = decided.scores.get(better) or {}
+    right = decided.scores.get(worse) or {}
+    gaps = {
+        dimension: left[dimension] - right.get(dimension, 0.0)
+        for dimension in left
+        if left[dimension] - right.get(dimension, 0.0) > 0
+    }
+    return max(gaps, key=lambda d: gaps[d]) if gaps else None
 
 
 def agreement(
@@ -174,6 +205,11 @@ def agreement(
 
     seen: set[str] = set()
     incomplete = 0
+    #: Concordance per (rubric, prompt) version, so a change can be shown to
+    #: have moved it. Keyed by a readable label rather than a tuple so it
+    #: survives JSON.
+    by_version: dict[str, dict[str, int]] = {}
+    blame: dict[str, int] = {}
     for review in load(path):
         decided = judge_rankings.get(review.run_id)
         judge_order = decided.ranking if decided is not None else None
@@ -197,6 +233,10 @@ def agreement(
             else:
                 disagreed += 1
 
+        label = f"rubric v{decided.rubric_version}/prompt v{decided.prompt_version}"
+        bucket = by_version.setdefault(label, {"concordant": 0, "discordant": 0, "runs": 0})
+        bucket["runs"] += 1
+
         human_pairs = _pairs(review.ranking)
         judge_pairs = _pairs(list(judge_order))
         for key, human in human_pairs.items():
@@ -205,8 +245,15 @@ def agreement(
                 continue
             if judge == human:
                 concordant += 1
+                bucket["concordant"] += 1
             else:
                 discordant += 1
+                bucket["discordant"] += 1
+                # The judge put one above the other and the person reversed it.
+                judge_better, judge_worse = (key if judge == 1 else key[::-1])
+                dimension = _blamed_dimension(decided, judge_better, judge_worse)
+                if dimension:
+                    blame[dimension] = blame.get(dimension, 0) + 1
 
     total = agreed + disagreed
     pairs = concordant + discordant
@@ -226,6 +273,24 @@ def agreement(
         "citations": citations,
         "reviews_for_unknown_runs": unreviewed,
         "excluded_incomplete_runs": incomplete,
+        # The evidence that a change helped, or did not. One number is a
+        # snapshot; two numbers either side of a version bump are an argument.
+        "by_version": {
+            label: {
+                **counts,
+                "concordance": (
+                    counts["concordant"] / (counts["concordant"] + counts["discordant"])
+                    if counts["concordant"] + counts["discordant"]
+                    else None
+                ),
+            }
+            for label, counts in sorted(by_version.items())
+        },
+        # Where to look first. See `_blamed_dimension` -- a heuristic, not a
+        # measurement.
+        "disagreement_by_dimension": dict(
+            sorted(blame.items(), key=lambda kv: -kv[1])
+        ),
     }
 
 

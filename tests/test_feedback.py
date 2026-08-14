@@ -246,3 +246,80 @@ def test_the_exclusion_is_visible_rather_than_silent(tmp_path):
     assert result["reviewed"] == 0
     assert result["concordance"] is None
     assert result["excluded_incomplete_runs"] == 1
+
+
+def test_concordance_is_reported_per_version(tmp_path):
+    """The mechanism for showing a change helped.
+
+    One concordance figure is a snapshot. Two, either side of a version bump,
+    are an argument -- and the version markers exist on both ends already,
+    `RUBRIC_VERSION` for the scorer and `prompt_version` for the brief.
+    """
+    path = tmp_path / "feedback.jsonl"
+    for run_id in ("old", "new"):
+        feedback.record(
+            review(
+                run_id,
+                winner="aws",
+                drafts=[
+                    feedback.DraftFeedback(source="aws", rank=1),
+                    feedback.DraftFeedback(source="gcp", rank=2),
+                ],
+            ),
+            path=path,
+        )
+
+    result = feedback.agreement(
+        {
+            # The old rubric disagreed with the person; the new one agrees.
+            "old": feedback.JudgeRanking(
+                ranking=["gcp", "aws"], rubric_version=1, prompt_version=2
+            ),
+            "new": feedback.JudgeRanking(
+                ranking=["aws", "gcp"], rubric_version=2, prompt_version=3
+            ),
+        },
+        path=path,
+    )
+
+    versions = result["by_version"]
+    assert versions["rubric v1/prompt v2"]["concordance"] == 0.0
+    assert versions["rubric v2/prompt v3"]["concordance"] == 1.0
+
+
+def test_a_disagreement_is_blamed_on_a_dimension(tmp_path):
+    """What turns a concordance figure into something anyone can act on.
+
+    "The judge disagrees with people 40% of the time" is a complaint. "It
+    disagrees on `evidence`, and `evidence` counts citation shapes" is a
+    change.
+    """
+    path = tmp_path / "feedback.jsonl"
+    feedback.record(
+        review(
+            "run-1",
+            drafts=[
+                feedback.DraftFeedback(source="aws", rank=1),
+                feedback.DraftFeedback(source="gcp", rank=2),
+            ],
+        ),
+        path=path,
+    )
+
+    result = feedback.agreement(
+        {
+            "run-1": feedback.JudgeRanking(
+                # The judge preferred gcp; the person preferred aws.
+                ranking=["gcp", "aws"],
+                scores={
+                    "gcp": {"evidence": 5.0, "coverage": 4.0},
+                    "aws": {"evidence": 0.0, "coverage": 4.5},
+                },
+            )
+        },
+        path=path,
+    )
+
+    # `evidence` is where the judge's advantage for gcp was largest, so it is
+    # the first suspect for the reversal.
+    assert result["disagreement_by_dimension"] == {"evidence": 1}
