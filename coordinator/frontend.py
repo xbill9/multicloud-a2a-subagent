@@ -209,6 +209,27 @@ PAGE = """<!doctype html>
   .vizkey { display: flex; gap: 14px; flex-wrap: wrap; color: var(--dim);
             font-size: 11px; margin-top: 6px; }
   .vizkey b { font-weight: 600; }
+
+  /* human in the loop */
+  .step { border-left: 3px solid var(--line); padding: 0 0 14px 14px; margin-left: 6px; }
+  .step.up { border-left-color: #00c176; }
+  .step h5 { margin: 0 0 6px; font-size: 13px; display: flex; gap: 10px;
+             align-items: baseline; }
+  .draftbody { white-space: pre-wrap; font-family: var(--mono); font-size: 12px;
+               background: var(--line); border-radius: 6px; padding: 10px;
+               max-height: 300px; overflow-y: auto; }
+  .cites { margin-top: 8px; font-size: 12px; }
+  .cite { display: flex; gap: 8px; align-items: baseline; padding: 3px 0;
+          border-bottom: 1px solid var(--line); }
+  .cite a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  .cite .st { flex: 0 0 76px; font-family: var(--mono); font-size: 11px; }
+  .cite select { margin: 0; width: auto; font-size: 11px; padding: 2px 4px; }
+  .srcbody { white-space: pre-wrap; font-size: 12px; color: var(--dim);
+             border-left: 2px solid var(--accent); padding: 6px 10px; margin: 6px 0;
+             max-height: 200px; overflow-y: auto; }
+  .hitl input[type=number] { width: 70px; }
+  .hitl .row2 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+                margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -225,6 +246,7 @@ PAGE = """<!doctype html>
     <button data-tab="flow">flow</button>
     <button data-tab="reviews">reviews</button>
     <button data-tab="wire">wire</button>
+    <button data-tab="review">review</button>
     <button data-tab="audit">audit</button>
   </div>
 
@@ -335,6 +357,15 @@ PAGE = """<!doctype html>
        order, with the provider's own request id where it sent one. This is the
        only column here that someone outside this process can check.</p>
     <div id="wire">loading&hellip;</div>
+  </section>
+
+  <section id="tab-review" hidden>
+    <p class="sub">Read each cloud's chain &mdash; what it wrote, what the judge
+       said, what it wrote next &mdash; open the sources it cited, and record
+       what you think. Your verdict never changes the judge's: this measures the
+       scorer, and a scorer corrected by its reviewers measures nothing.</p>
+    <div id="hitlNav" class="flownav"></div>
+    <div id="hitl">loading&hellip;</div>
   </section>
 
   <section id="tab-audit" hidden>
@@ -1114,14 +1145,188 @@ renderTelemetry();
 renderEvents();
 drawViz();
 
+
+// --------------------------------------------------------------------------
+// Human in the loop
+// --------------------------------------------------------------------------
+//
+// Read one cloud's chain, open what it cited, say what you think. The verdict
+// recorded here never overwrites the judge's -- the point is to measure the
+// scorer, and the README has carried the gap this closes since the rubric was
+// written: nobody had checked that rubric rank correlates with human rank on
+// even one set of drafts.
+//
+// Every source opens through api/source, which only fetches URLs that appear in
+// a draft of the run being read. The caller does not choose the target; the
+// corpus does. That is what keeps a public, credential-holding master from
+// being a fetch-anything proxy.
+
+const CITE_VERDICTS = ['unchecked', 'verified', 'unreachable', 'unrelated', 'fabricated'];
+let hitlIndex = 1;
+let hitl = null;
+const citeState = {};   // url -> verdict chosen by the reviewer
+
+async function loadHitl() {
+  try {
+    const res = await fetch('api/lineage?n=' + hitlIndex);
+    if (res.status === 404) {
+      $('hitl').innerHTML = `<div class="panel"><p class="meta" style="margin:0">
+        Nothing recorded yet. Send a brief.</p></div>`;
+      $('hitlNav').innerHTML = '';
+      return;
+    }
+    hitl = await res.json();
+  } catch (e) { $('hitl').textContent = String(e); return; }
+  renderHitl();
+}
+
+function renderHitl() {
+  const d = hitl;
+  $('hitlNav').innerHTML = `
+    <button id="hPrev">&larr; older</button>
+    <button id="hNext" ${hitlIndex <= 1 ? 'disabled' : ''}>newer &rarr;</button>
+    <span class="meta"><b>${esc(d.run_id)}</b> &middot; judge ${esc(d.judge)}
+      chose <b>${esc(d.winner || 'none')}</b> &middot; ${d.rounds} round(s)</span>`;
+  $('hPrev').onclick = () => { hitlIndex++; loadHitl(); };
+  $('hNext').onclick = () => { hitlIndex = Math.max(1, hitlIndex - 1); loadHitl(); };
+
+  const chains = d.chains.map(chain => {
+    const steps = chain.steps.map((s, i) => {
+      const prev = i > 0 ? chain.steps[i - 1].total : null;
+      const better = prev !== null && s.total !== null && s.total > prev;
+      const dims = s.scores.map(x =>
+        `${esc(x.dimension)} ${x.score.toFixed(1)}`).join(' &middot; ');
+      const cites = s.citations.length
+        ? `<div class="cites">${s.citations.map(u => citeRow(u)).join('')}</div>`
+        : `<p class="meta" style="margin:6px 0 0">no linked sources${
+             s.searches === 0 ? ' &mdash; and it made no searches' : ''}</p>`;
+      return `<div class="step ${better ? 'up' : ''}">
+        <h5>round ${s.round}
+          <span class="peers">${s.total === null ? '' : s.total.toFixed(1) + '/25'}</span>
+          <span class="peers">${s.words}w &middot; ${
+            s.searches < 0 ? 'searches not reported' : s.searches + ' search(es)'}</span>
+        </h5>
+        <p class="meta" style="margin:0 0 6px">${dims}</p>
+        ${s.critique ? `<div class="crit"><b>the judge sent this back with:</b>\n${esc(s.critique)}</div>` : ''}
+        <details style="margin-top:8px"><summary class="meta">read the draft</summary>
+          <div class="draftbody">${esc(s.body)}</div></details>
+        ${cites}
+      </div>`;
+    }).join('');
+
+    return `<div class="panel hitl" style="margin-bottom:14px">
+      <h4 style="margin:0 0 10px"><span class="tag ${esc(chain.source)}">${esc(chain.source)}</span>
+        <span class="peers">${esc(chain.auth)}</span></h4>
+      ${steps}
+      <div class="row2">
+        <label style="margin:0">your rank <input type="number" min="1" max="9"
+          id="rank-${esc(chain.source)}" placeholder="1"></label>
+        <input placeholder="why?" id="note-${esc(chain.source)}" style="flex:1;min-width:160px">
+      </div>
+    </div>`;
+  }).join('');
+
+  const already = (d.feedback || []).length;
+  $('hitl').innerHTML = chains + `
+    <div class="panel hitl">
+      <div class="row2">
+        <label style="margin:0">you would pick
+          <select id="hWinner">
+            <option value="">&mdash;</option>
+            ${d.chains.map(c => `<option value="${esc(c.source)}">${esc(c.source)}</option>`).join('')}
+          </select></label>
+        <input id="hReviewer" placeholder="your name" style="width:140px">
+        <input id="hNote" placeholder="overall note" style="flex:1;min-width:160px">
+        <button id="hSave" style="margin:0">record</button>
+      </div>
+      <p class="meta" id="hStatus" style="margin:8px 0 0">${
+        already ? `${already} review(s) already recorded for this run` : ''}</p>
+    </div>`;
+
+  $('hSave').onclick = saveFeedback;
+}
+
+function citeRow(url) {
+  const id = 'c' + Math.abs([...url].reduce((a, c) => a * 31 + c.charCodeAt(0) | 0, 7));
+  const chosen = citeState[url] || 'unchecked';
+  return `<div class="cite">
+    <span class="st" id="${id}-st">&mdash;</span>
+    <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>
+    <button style="margin:0;padding:2px 8px" onclick="openSource('${esc(url)}','${id}')">open</button>
+    <select onchange="citeState['${esc(url)}']=this.value">
+      ${CITE_VERDICTS.map(v =>
+        `<option value="${v}" ${v === chosen ? 'selected' : ''}>${v}</option>`).join('')}
+    </select>
+  </div><div id="${id}-body"></div>`;
+}
+
+// Fetched through the master rather than by the browser, so a citation that is
+// dead *from the mesh's own network* is reported as such -- which is the case
+// that matters when asking whether an agent could have read what it cited.
+async function openSource(url, id) {
+  const status = document.getElementById(id + '-st');
+  const body = document.getElementById(id + '-body');
+  status.textContent = '...';
+  try {
+    const r = await fetch(`api/source?n=${hitlIndex}&url=` + encodeURIComponent(url));
+    const d = await r.json();
+    status.textContent = d.ok ? String(d.status) : (d.status || 'dead');
+    status.style.color = d.ok ? '#00c176' : '#d05a5a';
+    body.innerHTML = `<div class="srcbody"><b>${esc(d.title || d.reason || '')}</b>
+      ${d.final_url ? `<br><span class="meta">redirected to ${esc(d.final_url)}</span>` : ''}
+      <br>${esc((d.excerpt || '').slice(0, 1200))}</div>`;
+    // A dead citation is the finding, so it pre-selects the verdict rather than
+    // making the reviewer type it. Still theirs to override: unreachable is not
+    // fabricated, and only a person can tell those apart.
+    if (!d.ok && !citeState[url]) citeState[url] = 'unreachable';
+  } catch (e) {
+    status.textContent = 'error';
+    body.innerHTML = `<div class="srcbody">${esc(String(e))}</div>`;
+  }
+}
+
+async function saveFeedback() {
+  const drafts = hitl.chains.map(c => {
+    const rank = parseInt(($('rank-' + c.source) || {}).value, 10);
+    const cites = [...new Set(c.steps.flatMap(s => s.citations))]
+      .filter(u => citeState[u] && citeState[u] !== 'unchecked')
+      .map(u => ({url: u, verdict: citeState[u]}));
+    return {
+      source: c.source,
+      rank: Number.isFinite(rank) ? rank : null,
+      note: ($('note-' + c.source) || {}).value || '',
+      citations: cites,
+    };
+  });
+  const body = {
+    run_id: hitl.run_id,
+    reviewer: $('hReviewer').value || 'anonymous',
+    winner: $('hWinner').value || null,
+    note: $('hNote').value || '',
+    drafts,
+  };
+  $('hStatus').textContent = 'recording…';
+  try {
+    const r = await fetch('api/feedback', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    $('hStatus').textContent = d.recorded
+      ? `recorded. The judge's verdict is unchanged — that is the point.`
+      : `not recorded: ${d.error}`;
+  } catch (e) { $('hStatus').textContent = String(e); }
+}
+
 document.querySelectorAll('.tabs button').forEach(btn => {
   btn.onclick = async () => {
     document.querySelectorAll('.tabs button').forEach(b =>
       b.classList.toggle('on', b === btn));
-    ['run', 'last', 'live', 'flow', 'reviews', 'wire', 'audit'].forEach(tab => {
+    ['run', 'last', 'live', 'flow', 'reviews', 'wire', 'review', 'audit'].forEach(tab => {
       $('tab-' + tab).hidden = btn.dataset.tab !== tab;
     });
     if (['flow', 'reviews', 'wire'].includes(btn.dataset.tab)) { await loadFlow(); }
+    if (btn.dataset.tab === 'review') { await loadHitl(); }
     if (btn.dataset.tab === 'audit') {
       try { $('audit').textContent = await (await fetch('api/audit')).text(); }
       catch (e) { $('audit').textContent = String(e); }

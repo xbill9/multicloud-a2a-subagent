@@ -208,6 +208,19 @@ class ResearchRun(BaseModel):
     #: render a flow diagram claiming it did.
     traces: dict[str, list[TraceStep]] = Field(default_factory=dict)
     verdict: Verdict | None = None
+    #: Every draft ever produced, including the ones a rewrite replaced.
+    #:
+    #: `drafts` holds the *final* version per cloud, which is what the verdict
+    #: ranked and what the audit scores. This holds the whole chain, and without
+    #: it a rewrite is unreadable: the mesh overwrote round 1's text the moment
+    #: round 2 landed, so the draft a critique was written *about* no longer
+    #: existed by the time anyone could look. A reviewer asking "did it actually
+    #: fix what the judge complained about" had nothing to compare.
+    #:
+    #: Ordered as produced. Empty on runs recorded before this existed, which is
+    #: read as "only the final version was kept" rather than "there was one
+    #: round".
+    versions: list[Draft] = Field(default_factory=list)
     #: Every round's verdict, oldest first; the last is ``verdict``. This is
     #: the loop's evidence and the thing the audit reads: a cloud that passed
     #: first time and a cloud that needed three attempts are indistinguishable
@@ -219,6 +232,21 @@ class ResearchRun(BaseModel):
     @property
     def round_count(self) -> int:
         return max(len(self.rounds), 1)
+
+    def lineage(self, source: str) -> list[Draft]:
+        """Every version this cloud produced, oldest first.
+
+        Falls back to the final draft alone for a run recorded before versions
+        were kept, so an old run renders as a one-round chain rather than as an
+        empty one.
+        """
+        chain = sorted(
+            (draft for draft in self.versions if draft.source == source),
+            key=lambda draft: draft.round,
+        )
+        if chain:
+            return chain
+        return [draft for draft in self.drafts if draft.source == source]
 
     def rounds_used(self, source: str) -> int:
         """How many attempts this cloud made before the loop stopped.

@@ -144,6 +144,9 @@ class ResearchMesh:
                 )
             )
         drafts = {draft.source: draft for draft in gathered if draft is not None}
+        # Every version, kept as produced. `drafts` is overwritten by a rewrite
+        # below; this is not.
+        versions: list[Draft] = list(drafts.values())
 
         verdict = await self._judge_drafts(request, drafts, run_id)
         rounds = [verdict]
@@ -268,6 +271,7 @@ class ResearchMesh:
             for draft in revised:
                 if draft is not None:
                     drafts[draft.source] = draft
+                    versions.append(draft)
 
             verdict = await self._judge_drafts(request, drafts, run_id)
             rounds.append(verdict)
@@ -297,6 +301,7 @@ class ResearchMesh:
                 participant.name: participant.auth for participant in self._participants
             },
             drafts=drafts_final,
+            versions=versions,
             failures=failures,
             traces=traces,
             verdict=verdict,

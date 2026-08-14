@@ -58,6 +58,7 @@ from starlette.responses import (
 from starlette.routing import Route
 
 from clients import CLIENT_STACKS
+from coordinator import sources as sources_mod
 from coordinator.errors import AdapterError
 from coordinator.events import BUS
 from coordinator.flow import build_flow
@@ -72,6 +73,7 @@ from coordinator.participants import (
     endpoint_for,
 )
 from coordinator.timeline import render as render_timeline
+from evaluations import feedback as feedback_store
 from evaluations.report import aggregate
 from evaluations.report import render as render_audit
 from evaluations.store import load as load_runs
@@ -409,6 +411,191 @@ async def flow(request):
     return JSONResponse({"total_runs": len(runs), **build_flow(runs[-index][1])})
 
 
+def _run_by_index(request):
+    """The run `?n=` names, or an error response. `n=1` is the most recent."""
+    try:
+        runs = list(load_runs())
+    except OSError as exc:
+        return None, JSONResponse(
+            {"error": f"evaluation store unreadable: {exc}"}, status_code=503
+        )
+    if not runs:
+        return None, JSONResponse({"error": "no run has been recorded yet"}, status_code=404)
+
+    raw = request.query_params.get("run_id", "")
+    if raw:
+        for _recorded, run in reversed(runs):
+            if run.run_id == raw:
+                return run, None
+        return None, JSONResponse({"error": f"no run {raw!r}"}, status_code=404)
+
+    try:
+        index = max(1, int(request.query_params.get("n", "1")))
+    except ValueError:
+        return None, JSONResponse({"error": "n must be a positive integer"}, status_code=400)
+    if index > len(runs):
+        return None, JSONResponse({"error": f"only {len(runs)} run(s) recorded"}, status_code=404)
+    return runs[-index][1], None
+
+
+async def lineage(request):
+    """Every version of every draft, with the critique each one earned.
+
+    The chain a reviewer reads: what a cloud wrote, what the judge said about
+    it, what it wrote next. Until draft versions were kept this could not be
+    built at all -- a rewrite overwrote the text its critique was about, so
+    "did it fix what the judge complained about" had nothing to compare.
+    """
+    run, error = _run_by_index(request)
+    if error is not None:
+        return error
+
+    from coordinator.judge import critique_for
+
+    verdicts = run.rounds or ([run.verdict] if run.verdict else [])
+    chains = []
+    for name in run.participants:
+        steps = []
+        for draft in run.lineage(name):
+            verdict = next(
+                (
+                    entry
+                    for round_verdict in verdicts
+                    if round_verdict is not None
+                    for entry in round_verdict.verdicts
+                    if entry.source == name
+                    and verdicts.index(round_verdict) == draft.round - 1
+                ),
+                None,
+            )
+            steps.append(
+                {
+                    "round": draft.round,
+                    "model": draft.model,
+                    "brain": draft.brain,
+                    "title": draft.title,
+                    "body": draft.body,
+                    "words": draft.word_count,
+                    "searches": draft.searches,
+                    "latency_ms": draft.latency_ms,
+                    "total": verdict.total if verdict else None,
+                    "scores": (
+                        [
+                            {"dimension": s.dimension, "score": s.score, "rationale": s.rationale}
+                            for s in verdict.scores
+                        ]
+                        if verdict
+                        else []
+                    ),
+                    "critique": critique_for(verdict) if verdict else "",
+                    "citations": sources_mod.extract_urls(draft.body),
+                }
+            )
+        chains.append({"source": name, "auth": run.auth_modes.get(name, "none"), "steps": steps})
+
+    return JSONResponse(
+        {
+            "run_id": run.run_id,
+            "topic": run.request.topic,
+            "winner": run.verdict.winner if run.verdict else None,
+            "judge": run.verdict.judge if run.verdict else "",
+            "rounds": run.round_count,
+            "chains": chains,
+            "feedback": [r.model_dump(mode="json") for r in feedback_store.for_run(run.run_id)],
+        }
+    )
+
+
+async def source_fetch(request):
+    """Open one URL a draft cited, and say what came back.
+
+    Only a URL that appears in a draft of the named run can be fetched. The
+    caller does not choose the target; the corpus does. This master is deployed
+    open to the internet and holds federated credentials for three clouds, so an
+    endpoint that fetched an arbitrary URL would be a server-side request
+    forgery hole pointed at a credentialed host -- see `coordinator/sources.py`.
+    """
+    run, error = _run_by_index(request)
+    if error is not None:
+        return error
+
+    url = request.query_params.get("url", "").strip()
+    if not url:
+        return JSONResponse({"error": "url is required"}, status_code=400)
+
+    result = await sources_mod.fetch(url, sources_mod.known_urls(run))
+    # A refusal is a 200 carrying `ok: false`: the page renders it beside the
+    # citation as a verdict, and an HTTP error code here would read as this
+    # service failing rather than as that citation not resolving.
+    return JSONResponse(result)
+
+
+async def feedback(request):
+    """Read or record what a person thought of a run.
+
+    Never changes a verdict. The judge said what it said, and this records
+    disagreement rather than resolving it -- a scorer quietly corrected by its
+    reviewers measures nothing.
+    """
+    if request.method == "GET":
+        run_id = request.query_params.get("run_id", "").strip()
+        reviews = feedback_store.for_run(run_id) if run_id else list(feedback_store.load())
+        return JSONResponse([review.model_dump(mode="json") for review in reviews])
+
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return JSONResponse({"error": "body must be JSON"}, status_code=400)
+
+    try:
+        review = feedback_store.HumanReview.model_validate(payload)
+    except ValidationError as exc:
+        return JSONResponse({"error": f"invalid review: {exc}"}, status_code=400)
+
+    bad = [
+        citation.verdict
+        for draft in review.drafts
+        for citation in draft.citations
+        if citation.verdict not in feedback_store.CITATION_VERDICTS
+    ]
+    if bad:
+        return JSONResponse(
+            {
+                "error": f"unknown citation verdict(s) {sorted(set(bad))}; "
+                f"expected one of {list(feedback_store.CITATION_VERDICTS)}"
+            },
+            status_code=400,
+        )
+
+    try:
+        async with _store_lock:
+            feedback_store.record(review)
+    except OSError as exc:
+        log.error("could not record feedback for %s: %s", review.run_id, exc)
+        return JSONResponse({"error": f"could not record: {exc}"}, status_code=503)
+
+    log.info("feedback recorded for run %s by %s", review.run_id, review.reviewer)
+    return JSONResponse({"recorded": True, "run_id": review.run_id})
+
+
+async def calibration(request):
+    """How often a human and the judge picked the same winner.
+
+    The one number here that can say the instrument is wrong.
+    """
+    try:
+        winners = {
+            run.run_id: (run.verdict.winner if run.verdict else None)
+            for _recorded, run in load_runs()
+        }
+    except OSError as exc:
+        return JSONResponse({"error": f"evaluation store unreadable: {exc}"}, status_code=503)
+
+    result = feedback_store.agreement(winners)
+    result["runs_recorded"] = len(winners)
+    return JSONResponse(result)
+
+
 async def audit(request):
     try:
         text = render_audit(aggregate(list(load_runs())))
@@ -428,6 +615,10 @@ app = Starlette(
         Route("/api/ping", ping),
         Route("/api/stream", stream),
         Route("/api/flow", flow),
+        Route("/api/lineage", lineage),
+        Route("/api/source", source_fetch),
+        Route("/api/feedback", feedback, methods=["GET", "POST"]),
+        Route("/api/calibration", calibration),
         Route("/api/audit", audit),
     ]
 )

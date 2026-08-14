@@ -789,3 +789,129 @@ def test_an_in_flight_run_is_released_even_when_it_fails(client, monkeypatch):
         client.post("/api/research", json=brief())
 
     assert service._in_flight == 0
+
+
+# --------------------------------------------------------------------------
+# Lineage, sources and human feedback
+# --------------------------------------------------------------------------
+
+
+def test_lineage_returns_every_version_with_the_critique_it_earned(client, monkeypatch, tmp_path):
+    """The chain a reviewer reads: what a cloud wrote, what the judge said, what
+    it wrote next. Impossible until draft versions were kept -- a rewrite
+    overwrote the text its critique was about."""
+    import asyncio
+
+    from coordinator.mesh import ResearchMesh
+    from coordinator.models import ResearchRequest
+    from coordinator.participants import Participant
+    from evaluations.store import record as record_run
+    from tests.test_mesh import STRONG, WEAK, Improving
+
+    monkeypatch.setenv("RESEARCH_FEEDBACK_STORE", str(tmp_path / "feedback.jsonl"))
+    run = asyncio.run(
+        ResearchMesh(
+            [Participant(name="aws", source=Improving("aws", [WEAK, STRONG]), cloud="aws")],
+            max_rounds=3,
+        ).run(ResearchRequest(topic="agent-to-agent protocols", max_words=300))
+    )
+    record_run(run)
+
+    payload = client.get(f"/api/lineage?run_id={run.run_id}").json()
+    steps = payload["chains"][0]["steps"]
+
+    assert [s["round"] for s in steps] == [1, 2]
+    assert steps[0]["body"] == WEAK, "the superseded draft was not kept"
+    assert steps[1]["body"] == STRONG
+    assert steps[0]["critique"], "round 1 earned a critique and it is not shown"
+    assert steps[1]["total"] > steps[0]["total"]
+
+
+def test_a_source_no_draft_cited_cannot_be_fetched(client):
+    """The endpoint that would otherwise be an SSRF hole pointed at a
+    credentialed host."""
+    client.post("/api/research", json=brief())
+    payload = client.get("/api/source?url=http://169.254.169.254/computeMetadata/v1/").json()
+
+    assert payload["ok"] is False
+    assert "not cited" in payload["reason"]
+
+
+def test_feedback_records_and_reads_back(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("RESEARCH_FEEDBACK_STORE", str(tmp_path / "feedback.jsonl"))
+    run_id = client.post("/api/research", json=brief()).json()["run_id"]
+
+    posted = client.post(
+        "/api/feedback",
+        json={
+            "run_id": run_id,
+            "reviewer": "xbill",
+            "winner": "aws",
+            "drafts": [{"source": "aws", "rank": 1, "note": "named a manufacturer"}],
+        },
+    )
+    assert posted.status_code == 200
+
+    reviews = client.get(f"/api/feedback?run_id={run_id}").json()
+    assert len(reviews) == 1
+    assert reviews[0]["winner"] == "aws"
+
+
+def test_an_unknown_citation_verdict_is_refused(client, monkeypatch, tmp_path):
+    """The verdicts are a fixed vocabulary because the aggregate counts them.
+    A free-text verdict would be silently dropped from every tally."""
+    monkeypatch.setenv("RESEARCH_FEEDBACK_STORE", str(tmp_path / "feedback.jsonl"))
+    run_id = client.post("/api/research", json=brief()).json()["run_id"]
+
+    refused = client.post(
+        "/api/feedback",
+        json={
+            "run_id": run_id,
+            "drafts": [
+                {"source": "aws", "citations": [{"url": "https://a", "verdict": "dodgy"}]}
+            ],
+        },
+    )
+
+    assert refused.status_code == 400
+    assert "dodgy" in refused.json()["error"]
+
+
+def test_calibration_reports_agreement_between_human_and_judge(client, monkeypatch, tmp_path):
+    """The one number here that can say the instrument is wrong."""
+    monkeypatch.setenv("RESEARCH_FEEDBACK_STORE", str(tmp_path / "feedback.jsonl"))
+    run = client.post("/api/research", json=brief()).json()
+    client.post(
+        "/api/feedback",
+        json={"run_id": run["run_id"], "winner": run["verdict"]["winner"]},
+    )
+
+    payload = client.get("/api/calibration").json()
+
+    assert payload["reviewed"] == 1
+    assert payload["agreed"] == 1
+    assert payload["agreement_rate"] == 1.0
+
+
+def test_feedback_never_changes_the_verdict(client, monkeypatch, tmp_path):
+    """A scorer quietly corrected by its reviewers measures nothing."""
+    monkeypatch.setenv("RESEARCH_FEEDBACK_STORE", str(tmp_path / "feedback.jsonl"))
+    run = client.post("/api/research", json=brief()).json()
+    judged = run["verdict"]["winner"]
+
+    other = next(d["source"] for d in run["drafts"] if d["source"] != judged)
+    client.post("/api/feedback", json={"run_id": run["run_id"], "winner": other})
+
+    assert client.get("/api/last").json()["verdict"]["winner"] == judged
+
+
+def test_the_page_has_the_review_tab_and_its_endpoints():
+    from coordinator.frontend import PAGE
+
+    assert 'id="tab-review"' in PAGE
+    assert "api/lineage" in PAGE
+    assert "api/feedback" in PAGE
+    # Sources open through the master, never straight from the browser: a
+    # citation that is dead *from the mesh's own network* is the case that
+    # matters when asking whether an agent could have read what it cited.
+    assert "api/source?n=" in PAGE

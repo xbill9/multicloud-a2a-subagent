@@ -65,5 +65,5 @@ def load(path: Path | None = None) -> Iterator[tuple[datetime, ResearchRun]]:
                 payload = json.loads(line)
                 recorded_at = datetime.fromisoformat(payload["recorded_at"])
                 yield recorded_at, ResearchRun.model_validate(payload["run"])
-            except Exception:  # noqa: BLE001, PERF203 - a torn line must not kill the read
+            except Exception:  # noqa: BLE001 - a torn line must not kill the read
                 continue
