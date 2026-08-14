@@ -38,6 +38,8 @@ from html import unescape
 
 import httpx
 
+from protocol.telemetry import span
+
 #: Which backend ``web_search`` hits, from ``RESEARCH_SEARCH_PROVIDER``.
 #:
 #: ``duckduckgo``  keyless, the default. Costs nothing and needs no setup,
@@ -215,8 +217,24 @@ async def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
         return "Search is disabled for this run."
 
     _searches += 1
+    # One span per search. This is the half of the picture the coordinator can
+    # never see: a researcher's retrieval happens on another cloud, outside any
+    # trace this mesh opens, and until now the only evidence it happened at all
+    # was a count in the draft header.
     try:
-        results = await backend(query, max(1, min(max_results, 10)))
+        with span(
+            "research.search",
+            **{
+                "research.search_provider": search_provider(),
+                "research.search_query": query[:200],
+            },
+        ) as current:
+            results = await backend(query, max(1, min(max_results, 10)))
+            if current is not None:
+                try:
+                    current.set_attribute("research.search_results", len(results))
+                except Exception:  # noqa: BLE001,S110
+                    pass
     except Exception as exc:  # noqa: BLE001 - a failed search must not fail the draft
         # Returned to the model rather than raised. A researcher whose search
         # failed can still write, and should say what it could not check; a

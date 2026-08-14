@@ -63,9 +63,7 @@ _PROPER_RE = re.compile(r"\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b")
 _HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+\S", re.MULTILINE)
 _LIST_RE = re.compile(r"^\s{0,3}(?:[-*+]|\d+\.)\s+\S", re.MULTILINE)
 _STOPWORDS = frozenset(
-    "the a an and or of to in for on with is are was were be been how what why "
-    "which who whom when where does do did can could should would will shall "
-    "it its this that these those from by as at into than then".split()
+    ["the", "a", "an", "and", "or", "of", "to", "in", "for", "on", "with", "is", "are", "was", "were", "be", "been", "how", "what", "why", "which", "who", "whom", "when", "where", "does", "do", "did", "can", "could", "should", "would", "will", "shall", "it", "its", "this", "that", "these", "those", "from", "by", "as", "at", "into", "than", "then"]
 )
 
 

@@ -489,8 +489,8 @@ async def test_the_gcp_direct_agent_stamps_the_header():
     suite.
     """
     import agents.gcp.server as gcp
-    from protocol.research import build_prompt, parse_header
     from coordinator.models import ResearchRequest
+    from protocol.research import build_prompt, parse_header
 
     agent = gcp._direct_agent()
     prompt = build_prompt(ResearchRequest(topic="a topic"))

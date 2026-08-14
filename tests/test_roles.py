@@ -150,3 +150,82 @@ def test_each_researcher_runs_its_own_vendors_stack():
         source = (REPO / path).read_text()
         for needle in needles:
             assert needle in source, f"{path} no longer builds on {needle}"
+
+
+# --------------------------------------------------------------------------
+# Telemetry
+# --------------------------------------------------------------------------
+
+
+def test_telemetry_is_off_unless_configured(monkeypatch):
+    """No exporter named means no exporter installed.
+
+    A default that reaches for a collector nobody runs turns every process into
+    one that logs an export failure per batch, forever, and the first thing
+    anyone does about that is turn telemetry off entirely.
+    """
+    import importlib
+
+    from protocol import telemetry
+
+    monkeypatch.delenv("OTEL_TRACES_EXPORTER", raising=False)
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+    reloaded = importlib.reload(telemetry)
+    summary = reloaded.setup("research-test")
+
+    assert summary["enabled"] is False
+    assert summary["exporter"] == "none"
+    assert "OTEL" in summary["reason"]
+
+
+def test_a_span_is_a_no_op_when_telemetry_is_off(monkeypatch):
+    """The instrumentation must cost nothing when nobody asked for it, and it
+    must not change behaviour -- the mesh's own evidence trace is what the
+    results rest on, and telemetry is an addition to it, never a replacement."""
+    import importlib
+
+    from protocol import telemetry
+
+    monkeypatch.delenv("OTEL_TRACES_EXPORTER", raising=False)
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+    reloaded = importlib.reload(telemetry)
+    reloaded.setup("research-test")
+
+    with reloaded.span("research.test", **{"research.x": 1}):
+        pass
+
+
+def test_a_broken_exporter_does_not_stop_a_process_serving(monkeypatch):
+    """An agent that will not start because it cannot report that it started is
+    the wrong trade in every direction."""
+    import importlib
+
+    from protocol import telemetry
+
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:1/v1/traces")
+    reloaded = importlib.reload(telemetry)
+    summary = reloaded.setup("research-test")
+
+    # Either it configured (the exporter fails lazily on export) or it reported
+    # why it could not. It must never raise.
+    assert "enabled" in summary
+    with reloaded.span("research.test"):
+        pass
+
+
+def test_a_researcher_can_import_telemetry_without_the_coordinator():
+    """Telemetry lives in `protocol` for the same reason the wire types do."""
+    import subprocess
+    import sys
+
+    blocked = "\n".join(f"sys.modules[{n!r}] = None" for n in COORDINATOR_ONLY)
+    result = subprocess.run(
+        [sys.executable, "-c", f"import sys\n{blocked}\nimport protocol.telemetry\n"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr[-1500:]

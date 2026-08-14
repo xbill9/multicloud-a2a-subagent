@@ -38,11 +38,23 @@ from protocol.search import (
     search_summary,
     web_search,
 )
+from protocol.telemetry import (
+    instrument_app,
+    telemetry_summary,
+)
+from protocol.telemetry import (
+    setup as setup_telemetry,
+)
 
 logging.basicConfig(format="[%(levelname)s]: %(message)s", level=logging.INFO)
 
 DEFAULT_PORT = 10001
 CLOUD = "gcp"
+
+# Before anything builds an agent: the instrumented httpx client has to be in
+# place before a vendor SDK constructs its own, or that SDK's calls are
+# invisible to the trace.
+setup_telemetry("research-" + CLOUD)
 
 
 def model_id() -> str:
@@ -190,10 +202,12 @@ def build():
                 # another cloud, outside any trace it opened -- so this
                 # is the only place that fact is observable.
                 "search": search_summary(),
+                "telemetry": telemetry_summary(),
             }
         )
 
     a2a_app.add_route("/health", health, methods=["GET"])
+    instrument_app(a2a_app)
     return a2a_app
 
 

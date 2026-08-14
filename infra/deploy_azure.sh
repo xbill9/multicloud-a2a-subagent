@@ -123,7 +123,7 @@ deploy() {
   # Two-phase, as on both other clouds: the card must advertise an ingress FQDN
   # that does not exist until the app does.
   az containerapp update -n "$APP" -g "$RG" \
-    --set-env-vars "PUBLIC_URL=${url}" "RESEARCH_MODEL_MODE=${MODEL_MODE}" HOST=0.0.0.0 PORT=8080 -o none
+    --set-env-vars "PUBLIC_URL=${url}" "RESEARCH_MODEL_MODE=${MODEL_MODE}" "RESEARCH_CLOUD=azure" "OTEL_TRACES_EXPORTER=${OTEL_TRACES_EXPORTER:-none}" "OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}" HOST=0.0.0.0 PORT=8080 -o none
 
   registry_identity
 

@@ -27,6 +27,7 @@ import os
 from protocol.models import ResearchRequest
 from protocol.research import parse_brief, render_draft
 from protocol.search import search_count
+from protocol.telemetry import span
 
 #: The A2A card name every cloud advertises. Deliberately the same on all
 #: three: the clients dial a card name, and a per-cloud name would mean three
@@ -210,7 +211,21 @@ def wrap_responder(inner, *, agent: str, model: str):
         # request the container has ever served, and what the audit needs is
         # what *this* draft cost.
         before = search_count()
-        body = await inner(prompt)
+        with span(
+            "research.draft",
+            **{
+                "research.cloud": agent,
+                "research.model": model,
+                "research.brain": model_mode(),
+            },
+        ) as current:
+            body = await inner(prompt)
+            if current is not None:
+                try:
+                    current.set_attribute("research.searches", search_count() - before)
+                    current.set_attribute("research.words", len(body.split()))
+                except Exception:  # noqa: BLE001,S110
+                    pass
         return render_draft(
             body,
             agent=agent,

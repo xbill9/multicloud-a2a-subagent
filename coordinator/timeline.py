@@ -99,7 +99,7 @@ def render(run: ResearchRun) -> str:
         target = f"{step.host}{step.path}"
         lines.append(
             f"  {f'+{offset:.0f}ms':>8}  {leg:<6} {_PHASE_MARK.get(step.phase, '?')} "
-            f"{target[:44]:<44} {str(step.status or '-'):>4} "
+            f"{target[:44]:<44} {step.status or '-'!s:>4} "
             f"{f'{step.elapsed_ms:.0f}ms':>8} {_size(step):>7}"
             f"  |{_bar(offset, step.elapsed_ms, span_ms)}"
         )

@@ -156,6 +156,15 @@ RESEARCH_MODEL_GCP="${RESEARCH_MODEL_GCP:-${GENAI_MODEL:-gemini-2.5-flash}}"
 # puts Gemini in the judge seat -- and see the README on the bias that creates,
 # because the judge then shares a vendor with one of the three participants.
 JUDGE_MODE="${JUDGE_MODE:-rubric}"
+
+# OpenTelemetry. `gcp` writes to Cloud Trace with the ambient service account
+# and needs no endpoint or collector, which makes it the only exporter that is
+# free to turn on here. Set OTEL_TRACES_EXPORTER=otlp plus
+# OTEL_EXPORTER_OTLP_ENDPOINT to send somewhere else, or `none` to switch it
+# off. The agents report what they actually configured on /health, because a
+# process that intended to export traces and could not is indistinguishable
+# from one that is exporting them until someone goes looking.
+OTEL_TRACES_EXPORTER="${OTEL_TRACES_EXPORTER:-gcp}"
 service_url() {
   gcloud run services describe "$SERVICE" \
     --region "$REGION" --project "$PROJECT" --format='value(status.url)'
@@ -248,7 +257,7 @@ build() {
     --service-account "$COORDINATOR_SA" \
     "$ingress" \
     --timeout "$MASTER_TIMEOUT" \
-    --set-env-vars "RESEARCH_COORDINATOR_CLOUD=gcp,RESEARCH_JUDGE_MODE=${JUDGE_MODE},RESEARCH_TIMEOUT_SECONDS=${RESEARCH_TIMEOUT_SECONDS},RESEARCH_EVAL_STORE=${EVAL_MOUNT}/runs.jsonl,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
+    --set-env-vars "RESEARCH_COORDINATOR_CLOUD=gcp,RESEARCH_CLOUD=gcp,OTEL_TRACES_EXPORTER=${OTEL_TRACES_EXPORTER},RESEARCH_JUDGE_MODE=${JUDGE_MODE},RESEARCH_TIMEOUT_SECONDS=${RESEARCH_TIMEOUT_SECONDS},RESEARCH_EVAL_STORE=${EVAL_MOUNT}/runs.jsonl,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
     --add-volume "name=eval,type=cloud-storage,bucket=${EVAL_BUCKET}" \
     --add-volume-mount "volume=eval,mount-path=${EVAL_MOUNT}" \
     --min-instances 0 --max-instances 1 \
@@ -294,7 +303,7 @@ deploy() {
     --no-allow-unauthenticated \
     --port 8080 \
     --command /cnb/lifecycle/launcher --args="python,-m,agents.gcp.server" \
-    --set-env-vars "RESEARCH_MODEL_MODE=${MODEL_MODE},RESEARCH_MODEL_GCP=${RESEARCH_MODEL_GCP},HOST=0.0.0.0,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
+    --set-env-vars "RESEARCH_MODEL_MODE=${MODEL_MODE},RESEARCH_MODEL_GCP=${RESEARCH_MODEL_GCP},RESEARCH_CLOUD=gcp,OTEL_TRACES_EXPORTER=${OTEL_TRACES_EXPORTER},HOST=0.0.0.0,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
     --min-instances 0 --max-instances 2 \
     --quiet
 

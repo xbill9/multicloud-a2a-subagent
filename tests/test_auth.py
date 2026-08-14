@@ -15,6 +15,7 @@ import httpx
 import pytest
 
 from coordinator.auth import (
+    _EXPIRY_SKEW,
     ENTRA_EXCHANGE_AUDIENCE,
     AwsSigV4Auth,
     EntraFederatedAuth,
@@ -22,7 +23,6 @@ from coordinator.auth import (
     WorkloadIdentity,
     _AwsCredentials,
     _CachedToken,
-    _EXPIRY_SKEW,
     _jwt_expiry,
     _parse_sts_response,
     _signing_key,

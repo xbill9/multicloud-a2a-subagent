@@ -36,7 +36,12 @@ RUN pip install \
       azure-identity \
       pydantic \
       httpx \
-      uvicorn
+      uvicorn \
+      opentelemetry-sdk \
+      opentelemetry-instrumentation-httpx \
+      opentelemetry-instrumentation-logging \
+      opentelemetry-instrumentation-starlette \
+      opentelemetry-exporter-otlp-proto-http
 
 # A researcher, and only a researcher. It answers a brief with this cloud's own
 # model and returns markdown over A2A; it does not call anyone, judge anything,

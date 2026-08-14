@@ -11,6 +11,16 @@ requires-python = ">=3.13"
 dependencies = [
   "pydantic",
   "httpx",
+  # Telemetry is a dependency of every process, not an extra: the API is a
+  # no-op without an exporter, so carrying it costs nothing and leaving it
+  # optional means the one deployment that needed traces is the one that did
+  # not have them installed.
+  "opentelemetry-api",
+  "opentelemetry-sdk",
+  "opentelemetry-instrumentation-httpx",
+  "opentelemetry-instrumentation-logging",
+  "opentelemetry-instrumentation-starlette",
+  "opentelemetry-exporter-otlp-proto-http",
 ]
 
 [project.scripts]

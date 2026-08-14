@@ -67,9 +67,20 @@ from evaluations.report import aggregate
 from evaluations.report import render as render_audit
 from evaluations.store import load as load_runs
 from evaluations.store import record, store_path
+from protocol.telemetry import (
+    instrument_app,
+    telemetry_summary,
+)
+from protocol.telemetry import (
+    setup as setup_telemetry,
+)
 
 logging.basicConfig(format="[%(levelname)s]: %(message)s", level=logging.INFO)
 log = logging.getLogger("master")
+
+# Before the mesh builds any client: httpx has to be instrumented before a
+# vendor SDK constructs its own, or that SDK's calls never reach the trace.
+setup_telemetry("research-master")
 
 DEFAULT_TIMEOUT = default_timeout_seconds()
 
@@ -129,6 +140,7 @@ async def health(request):
             "judge": judge_mode(),
             "timeout_seconds": DEFAULT_TIMEOUT,
             "store": str(store_path()),
+            "telemetry": telemetry_summary(),
             "peers": peers,
         }
     )
@@ -264,6 +276,7 @@ app = Starlette(
         Route("/api/audit", audit),
     ]
 )
+instrument_app(app)
 
 
 def main() -> None:
@@ -271,7 +284,7 @@ def main() -> None:
 
     uvicorn.run(
         app,
-        host=os.getenv("HOST", "0.0.0.0"),  # noqa: S104 - Cloud Run requires it
+        host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8080")),
     )
 

@@ -31,9 +31,17 @@ from agents.common import (
 from agents.serving import build_agent_card, build_app
 from protocol.research import render_draft
 from protocol.search import search_count, search_enabled, web_search
+from protocol.telemetry import (
+    setup as setup_telemetry,
+)
 
 DEFAULT_PORT = 10003
 CLOUD = "azure"
+
+# Before anything builds an agent: the instrumented httpx client has to be in
+# place before a vendor SDK constructs its own, or that SDK's calls are
+# invisible to the trace.
+setup_telemetry("research-" + CLOUD)
 
 
 def model_id() -> str:

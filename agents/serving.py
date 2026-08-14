@@ -31,6 +31,7 @@ from agents.common import (
     wrap_responder,
 )
 from protocol.search import search_summary
+from protocol.telemetry import instrument_app, telemetry_summary
 
 Responder = Callable[[str], Awaitable[str]]
 
@@ -123,6 +124,7 @@ def build_app(executor: AgentExecutor, card: AgentCard, *, model: str = "unknown
                 # another cloud, outside any trace it opened -- so this
                 # is the only place that fact is observable.
                 "search": search_summary(),
+                "telemetry": telemetry_summary(),
             }
         )
 
@@ -137,7 +139,7 @@ def build_app(executor: AgentExecutor, card: AgentCard, *, model: str = "unknown
         """
         return JSONResponse({"status": "Healthy"})
 
-    return Starlette(
+    app = Starlette(
         routes=[
             *create_agent_card_routes(card),
             *create_jsonrpc_routes(handler, "/"),
@@ -146,6 +148,11 @@ def build_app(executor: AgentExecutor, card: AgentCard, *, model: str = "unknown
         ],
         middleware=[Middleware(_AssumeCurrentProtocolVersion)],
     )
+    # Continues the caller's trace rather than starting a new one: the
+    # coordinator's leg span and this agent's work belong in the same trace, and
+    # the `traceparent` header that joins them is already on the request.
+    instrument_app(app)
+    return app
 
 
 class _AssumeCurrentProtocolVersion(BaseHTTPMiddleware):

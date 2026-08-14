@@ -36,8 +36,29 @@ from coordinator.models import (
     new_run_id,
 )
 from coordinator.participants import Participant, Revision
+from protocol.telemetry import span
 
 log = logging.getLogger("mesh")
+
+
+def _mark_failed(current, kind: str, detail: str) -> None:
+    """Put a leg's failure on its span without letting telemetry raise.
+
+    The failure kind is the attribute worth having: `provider` and `protocol`
+    are the distinction this project keeps paying to preserve, and a backend
+    that can filter on it answers "did AgentCore break A2A or did Bedrock
+    refuse the topic" without anyone reading a log.
+    """
+    if current is None:
+        return
+    try:
+        current.set_attribute("research.failure_kind", kind)
+        current.set_attribute("research.failure", detail[:400])
+        from opentelemetry.trace import Status, StatusCode
+
+        current.set_status(Status(StatusCode.ERROR, detail[:200]))
+    except Exception:  # noqa: BLE001,S110
+        pass
 
 
 class ResearchMesh:
@@ -80,12 +101,40 @@ class ResearchMesh:
             request.topic[:120],
         )
 
-        gathered = await asyncio.gather(
-            *(
-                self._call(participant, request, failures, traces, run_id)
-                for participant in self._participants
+        # One span for the run, with every leg and judge round nested under it.
+        # `run_id` is on the span as well as in the store, which is the join
+        # between a distributed trace and the recorded evidence -- see
+        # protocol/telemetry.py on why both exist.
+        with span(
+            "research.run",
+            **{
+                "research.run_id": run_id,
+                "research.topic": request.topic[:200],
+                "research.participants": len(self._participants),
+                "research.max_rounds": self._max_rounds,
+                "research.pass_mark": self._pass_mark,
+            },
+        ):
+            return await self._rounds(
+                request, run_id, started, started_at, failures, traces
             )
-        )
+
+    async def _rounds(
+        self,
+        request: ResearchRequest,
+        run_id: str,
+        started: float,
+        started_at: datetime,
+        failures: dict[str, str],
+        traces: dict[str, list[TraceStep]],
+    ) -> ResearchRun:
+        with span("research.round", **{"research.round": 1}):
+            gathered = await asyncio.gather(
+                *(
+                    self._call(participant, request, failures, traces, run_id)
+                    for participant in self._participants
+                )
+            )
         drafts = {draft.source: draft for draft in gathered if draft is not None}
 
         verdict = await self._judge_drafts(request, drafts, run_id)
@@ -175,15 +224,23 @@ class ResearchMesh:
             )
 
             by_name = {participant.name: participant for participant in self._participants}
-            revised = await asyncio.gather(
-                *(
-                    self._call(
-                        by_name[name], request, failures, traces, run_id, revision=revision
-                    )
-                    for name, revision in revisions.items()
-                    if name in by_name
-                )
+            revision_span = span(
+                "research.round",
+                **{
+                    "research.round": round_number,
+                    "research.revising": ",".join(sorted(revisions)),
+                },
             )
+            with revision_span:
+                revised = await asyncio.gather(
+                *(
+                        self._call(
+                            by_name[name], request, failures, traces, run_id, revision=revision
+                        )
+                        for name, revision in revisions.items()
+                        if name in by_name
+                    )
+                )
             # A leg that failed on a rewrite keeps the draft it already had.
             # Losing a scored draft because its *improvement* timed out would
             # make the loop able to make a run worse, which is the one thing a
@@ -263,7 +320,20 @@ class ResearchMesh:
         """
         started_at = datetime.now(UTC)
         started = perf_counter()
-        verdict = await self._judge.judge(request, list(drafts.values()))
+        with span(
+            "research.judge",
+            **{
+                "research.run_id": run_id,
+                "research.drafts": len(drafts),
+            },
+        ) as judge_span:
+            verdict = await self._judge.judge(request, list(drafts.values()))
+            if judge_span is not None:
+                try:
+                    judge_span.set_attribute("research.judge_name", verdict.judge)
+                    judge_span.set_attribute("research.winner", verdict.winner or "none")
+                except Exception:  # noqa: BLE001,S110
+                    pass
         verdict.started_at = started_at
         verdict.elapsed_ms = (perf_counter() - started) * 1000
         log.info(
@@ -291,7 +361,17 @@ class ResearchMesh:
         # -- and because a leg that *failed* has a trace worth keeping and no
         # draft to hang it off. `asyncio.gather` gives each of these coroutines
         # its own context copy, so three legs fill three traces with no locking.
-        with trace.collect() as leg:
+        with trace.collect() as leg, span(
+            "research.leg",
+            **{
+                "research.run_id": run_id,
+                "research.cloud": participant.name,
+                "research.auth_mode": participant.auth,
+                "research.stack": participant.stack,
+                "research.round": revision.round if revision is not None else 1,
+                "research.revision": revision is not None,
+            },
+        ) as leg_span:
             try:
                 async with asyncio.timeout(self._timeout_seconds):
                     if revision is None:
@@ -301,15 +381,18 @@ class ResearchMesh:
                         return await participant.source.research(request)
                     return await participant.source.research(request, revision)
             except TimeoutError:
-                failures[participant.name] = AdapterError(
+                message = AdapterError(
                     FailureKind.TIMEOUT, f"exceeded {self._timeout_seconds}s"
                 ).safe_message()
+                failures[participant.name] = message
+                _mark_failed(leg_span, "timeout", message)
             except AdapterError as exc:
                 failures[participant.name] = exc.safe_message()
+                _mark_failed(leg_span, exc.kind.value, exc.safe_message())
             except Exception as exc:  # noqa: BLE001 - adapter boundary converts SDK failures
-                failures[participant.name] = AdapterError(
-                    FailureKind.PROTOCOL, str(exc)
-                ).safe_message()
+                message = AdapterError(FailureKind.PROTOCOL, str(exc)).safe_message()
+                failures[participant.name] = message
+                _mark_failed(leg_span, "protocol", message)
             finally:
                 # Recorded even on the success path's return, which is why this
                 # is a finally and not a line after the try.

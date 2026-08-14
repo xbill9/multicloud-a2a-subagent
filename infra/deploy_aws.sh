@@ -391,7 +391,7 @@ deploy() {
     --role-arn "arn:aws:iam::${account}:role/${ROLE_EXEC}" \
     --network-configuration 'networkMode=PUBLIC' \
     --protocol-configuration 'serverProtocol=A2A' \
-    --environment-variables "PUBLIC_URL=${url},RESEARCH_MODEL_MODE=${MODEL_MODE},BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID},HOST=0.0.0.0,PORT=9000" \
+    --environment-variables "PUBLIC_URL=${url},RESEARCH_CLOUD=aws,OTEL_TRACES_EXPORTER=${OTEL_TRACES_EXPORTER:-none},OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-},RESEARCH_MODEL_MODE=${MODEL_MODE},BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID},HOST=0.0.0.0,PORT=9000" \
     >/dev/null
 
   ensure_federated_role

@@ -22,3 +22,10 @@ pydantic
 httpx
 starlette
 uvicorn
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-httpx
+opentelemetry-instrumentation-logging
+opentelemetry-instrumentation-starlette
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-gcp-trace
