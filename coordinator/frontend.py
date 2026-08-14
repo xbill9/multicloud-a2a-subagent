@@ -132,6 +132,11 @@ PAGE = """<!doctype html>
   .tabs button { margin: 0; background: transparent; color: var(--dim);
                  border: 1px solid var(--line); font-weight: 500; padding: 7px 15px; }
   .tabs button.on { background: var(--line); color: var(--text); }
+  .tabs .runbook { margin-left: auto; align-self: center; color: var(--dim);
+                   text-decoration: none; font-size: 13px; padding: 6px 10px;
+                   border: 1px solid var(--line); border-radius: 6px; }
+  .tabs .runbook:hover, .tabs .runbook:focus-visible { color: var(--accent);
+                   border-color: var(--accent); }
   .peers { font: 12px ui-monospace, monospace; color: var(--dim); }
   .peers b { color: var(--text); font-weight: 500; }
 
@@ -248,6 +253,11 @@ PAGE = """<!doctype html>
     <button data-tab="wire">wire</button>
     <button data-tab="review">review</button>
     <button data-tab="audit">audit</button>
+    <!-- The manual, not a tab: it lives outside this service on purpose. A
+         runbook that is only reachable from the thing it documents is no use
+         on the morning that thing will not start. -->
+    <a class="runbook" href="https://claude.ai/code/artifact/3617b74c-c6a4-4ada-bf36-985bd142a97b"
+       target="_blank" rel="noopener noreferrer" title="How to test this, and what is actually measured">runbook &#8599;</a>
   </div>
 
   <section id="tab-run">

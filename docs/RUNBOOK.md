@@ -6,6 +6,11 @@ than anyone will remember.
 
 `README.md` is the argument. This is the operating manual.
 
+**Published:** https://claude.ai/code/artifact/3617b74c-c6a4-4ada-bf36-985bd142a97b
+— linked from the front end's tab bar. Kept outside the service deliberately: a
+runbook reachable only from the thing it documents is no use on the morning
+that thing will not start. Update this file, then republish it to the same URL.
+
 ---
 
 ## Where it is
@@ -45,8 +50,8 @@ end. Then **review** to read the lineage and open the cited sources.
 ### 2. The suite — 8 seconds, no cloud, no spend
 
 ```bash
-python3 -m pytest -q      # 338 tests
-ruff check .              # 16 findings, all pre-existing
+python3 -m pytest -q      # 347 tests
+ruff check .              # 17 findings, all pre-existing
 ```
 
 Entirely hermetic. Includes the guards that matter: SSRF refusals on the source
@@ -179,9 +184,17 @@ To close the front end again: unset `PUBLIC` and redeploy.
 | `RESEARCH_MAX_RUNS_PER_HOUR` | 30 | only enforced when public |
 | `OTEL_TRACES_EXPORTER` | `none` | `gcp` → Cloud Trace, needs no endpoint |
 
-Changing the judge, the rubric, the pass mark or the search provider changes
-what every subsequent run *means*. `evaluations.report` warns on mixed judges
-and mixed rubric versions; it cannot warn about the rest.
+Changing the judge, the rubric, the pass mark, **the instruction** or the
+search provider changes what every subsequent run *means*.
+`evaluations.report` warns on mixed judges, mixed rubric versions and mixed
+prompt versions; it cannot warn about the rest.
+
+The instruction is at **v2** since 2026-08-14 (`INSTRUCTION_VERSION`, carried
+per draft as `prompt_version`). v1 said nothing about searching and two of
+three models never called the tool they were given — AWS made zero searches in
+7 of 7 drafts. v2 requires a search before writing and forbids citing a URL
+that did not appear in the results. **Runs either side of it are not
+comparable.**
 
 ---
 

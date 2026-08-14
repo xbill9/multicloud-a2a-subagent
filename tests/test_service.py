@@ -915,3 +915,18 @@ def test_the_page_has_the_review_tab_and_its_endpoints():
     # citation that is dead *from the mesh's own network* is the case that
     # matters when asking whether an agent could have read what it cited.
     assert "api/source?n=" in PAGE
+
+
+def test_the_page_links_the_runbook():
+    """The manual is linked, not embedded, and lives outside this service.
+
+    A runbook reachable only from the thing it documents is no use on the
+    morning that thing will not start. The link is an anchor rather than a
+    fetched asset, so the page still renders with no external requests -- which
+    the external-asset guard above continues to assert.
+    """
+    from coordinator.frontend import PAGE
+
+    assert 'class="runbook"' in PAGE
+    assert "claude.ai/code/artifact" in PAGE
+    assert 'rel="noopener noreferrer"' in PAGE
