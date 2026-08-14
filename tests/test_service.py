@@ -930,3 +930,15 @@ def test_the_page_links_the_runbook():
     assert 'class="runbook"' in PAGE
     assert "claude.ai/code/artifact" in PAGE
     assert 'rel="noopener noreferrer"' in PAGE
+
+
+def test_the_review_screen_says_which_end_of_the_scale_is_best():
+    """A field labelled "your rank" with a 1-9 spinner reads as a score out of
+    ten to anyone who has not read the model. It is a placing, and 1 is best --
+    a reviewer who assumed the opposite would invert every comparison and the
+    concordance would come out backwards with nothing to say it had."""
+    from coordinator.frontend import PAGE
+
+    assert "1&nbsp;=&nbsp;best" in PAGE
+    assert 'title="1 is best"' in PAGE
+    assert "Placing is 1 = best" in PAGE

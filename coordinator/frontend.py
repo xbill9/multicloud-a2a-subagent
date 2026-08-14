@@ -372,8 +372,12 @@ PAGE = """<!doctype html>
   <section id="tab-review" hidden>
     <p class="sub">Read each cloud's chain &mdash; what it wrote, what the judge
        said, what it wrote next &mdash; open the sources it cited, and record
-       what you think. Your verdict never changes the judge's: this measures the
-       scorer, and a scorer corrected by its reviewers measures nothing.</p>
+       what you think. <b>Placing is 1 = best</b> — it is an order, not a score
+       out of ten, and it is the field that matters: each run yields one
+       comparison per <em>pair</em> of drafts, so three clouds give three data
+       points rather than one. Your verdict never changes the judge's: this
+       measures the scorer, and a scorer corrected by its reviewers measures
+       nothing.</p>
     <div id="hitlNav" class="flownav"></div>
     <div id="hitl">loading&hellip;</div>
   </section>
@@ -1229,8 +1233,10 @@ function renderHitl() {
         <span class="peers">${esc(chain.auth)}</span></h4>
       ${steps}
       <div class="row2">
-        <label style="margin:0">your rank <input type="number" min="1" max="9"
-          id="rank-${esc(chain.source)}" placeholder="1"></label>
+        <label style="margin:0">your placing
+          <input type="number" min="1" max="9" id="rank-${esc(chain.source)}"
+                 placeholder="1" title="1 is best"></label>
+        <span class="peers">1&nbsp;=&nbsp;best</span>
         <input placeholder="why?" id="note-${esc(chain.source)}" style="flex:1;min-width:160px">
       </div>
     </div>`;
