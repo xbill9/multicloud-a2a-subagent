@@ -525,9 +525,19 @@ probe() {
   echo
   echo "--- ${label}"
 
+  # `--async`, not `--wait`, and the reason is narrow: with `--wait` gcloud
+  # prints its progress as prose on stderr and puts *nothing* on stdout, so
+  # `--format='value(metadata.name)'` yields an empty string and the execution
+  # cannot be named. `--async` returns the name immediately, which is the one
+  # thing this probe cannot do without -- the verdict is read off that
+  # execution's container, and an unnamed execution is an unreadable one.
+  #
+  # Measured 2026-08-13, after `--wait` made every negative control report
+  # THE CONTROL DID NOT RUN. That was the guard behaving correctly on a probe
+  # that was broken, which is the outcome to prefer over the previous one.
   local execution="" rc=0
   execution="$(gcloud run jobs execute "$CONTROLS_JOB" \
-    --region "$REGION" --project "$PROJECT" --wait --quiet \
+    --region "$REGION" --project "$PROJECT" --async --quiet \
     --args="python,-m,coordinator.cli,how agent-to-agent protocols change multi-cloud architecture,--cloud,${cloud}" \
     ${1+--update-env-vars "$*"} \
     --format='value(metadata.name)' 2>/dev/null)" || rc=$?
@@ -547,6 +557,21 @@ probe() {
     echo "    way, and nothing below it should be read until it runs."
     return
   fi
+
+  # --async returned as soon as the execution existed, so wait for it to reach
+  # a terminal state here. There is no `executions wait` subcommand, so this
+  # polls the resource: a run of this mesh with a model in the path takes 30s
+  # to two minutes per leg, and the Azure leg alone has been measured at 54s
+  # and 33s across two rounds of the judge loop.
+  local waited=0 done=""
+  while [[ "$waited" -lt 600 ]]; do
+    done="$(gcloud run jobs executions describe "$execution" \
+      --region "$REGION" --project "$PROJECT" \
+      --format='value(status.succeededCount,status.failedCount)' 2>/dev/null || true)"
+    [[ -n "${done// /}" ]] && break
+    sleep 10
+    waited=$((waited + 10))
+  done
 
   # Cloud Logging lags the execution by a second or two.
   local code="" attempt
