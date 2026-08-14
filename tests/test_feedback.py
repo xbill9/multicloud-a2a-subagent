@@ -71,7 +71,7 @@ def test_a_torn_final_line_does_not_hide_the_rest(tmp_path):
 def test_agreement_is_none_rather_than_zero_when_nobody_has_looked(tmp_path):
     """"The judge and a human never agree" and "nobody has looked" are opposite
     claims and must not render as the same number."""
-    result = feedback.agreement({"run-1": "aws"}, path=tmp_path / "none.jsonl")
+    result = feedback.agreement({"run-1": ["aws"]}, path=tmp_path / "none.jsonl")
 
     assert result["reviewed"] == 0
     assert result["agreement_rate"] is None
@@ -83,7 +83,7 @@ def test_agreement_counts_only_runs_the_judge_also_ranked(tmp_path):
     feedback.record(review("run-2", winner="gcp"), path=path)
     feedback.record(review("ghost", winner="aws"), path=path)
 
-    result = feedback.agreement({"run-1": "aws", "run-2": "azure"}, path=path)
+    result = feedback.agreement({"run-1": ["aws"], "run-2": ["azure"]}, path=path)
 
     assert result["agreed"] == 1
     assert result["disagreed"] == 1
@@ -110,7 +110,7 @@ def test_citation_verdicts_are_tallied(tmp_path):
         path=path,
     )
 
-    result = feedback.agreement({"run-1": "aws"}, path=path)
+    result = feedback.agreement({"run-1": ["aws"]}, path=path)
 
     assert result["citations"]["verified"] == 1
     assert result["citations"]["fabricated"] == 1
@@ -123,3 +123,69 @@ def test_unreachable_is_not_the_same_verdict_as_fabricated():
     to support or refute."""
     assert "unreachable" in feedback.CITATION_VERDICTS
     assert "fabricated" in feedback.CITATION_VERDICTS
+
+
+def test_concordance_counts_every_pair_not_just_the_winner(tmp_path):
+    """The measure that makes a review worth doing.
+
+    Winner agreement is one bit per run, and with three clouds a coin lands on
+    it a third of the time. Every run yields one comparison per *pair* -- three
+    for a three-cloud run -- so five reviewed runs give fifteen comparisons
+    rather than five. That is the difference between a number and an anecdote.
+    """
+    path = tmp_path / "feedback.jsonl"
+    feedback.record(
+        review(
+            "run-1",
+            winner="aws",
+            drafts=[
+                feedback.DraftFeedback(source="aws", rank=1),
+                feedback.DraftFeedback(source="gcp", rank=2),
+                feedback.DraftFeedback(source="azure", rank=3),
+            ],
+        ),
+        path=path,
+    )
+
+    # The judge agrees on the winner and on aws>gcp and aws>azure, but flips
+    # the other two. One run, three pairs, two concordant.
+    result = feedback.agreement({"run-1": ["aws", "azure", "gcp"]}, path=path)
+
+    assert result["agreed"] == 1
+    assert result["pairs_compared"] == 3
+    assert result["concordant"] == 2
+    assert result["discordant"] == 1
+    assert result["concordance"] == 2 / 3
+
+
+def test_a_judge_that_is_exactly_backwards_scores_zero(tmp_path):
+    """Which would be a more useful finding than anything in between."""
+    path = tmp_path / "feedback.jsonl"
+    feedback.record(
+        review(
+            "run-1",
+            drafts=[
+                feedback.DraftFeedback(source="aws", rank=1),
+                feedback.DraftFeedback(source="gcp", rank=2),
+                feedback.DraftFeedback(source="azure", rank=3),
+            ],
+        ),
+        path=path,
+    )
+
+    result = feedback.agreement({"run-1": ["azure", "gcp", "aws"]}, path=path)
+
+    assert result["concordance"] == 0.0
+
+
+def test_concordance_is_none_when_nobody_ranked_anything(tmp_path):
+    """A reviewer who named a winner but ranked nothing contributes no pairs,
+    and that must not read as total disagreement."""
+    path = tmp_path / "feedback.jsonl"
+    feedback.record(review("run-1", winner="aws"), path=path)
+
+    result = feedback.agreement({"run-1": ["aws", "gcp"]}, path=path)
+
+    assert result["agreed"] == 1
+    assert result["pairs_compared"] == 0
+    assert result["concordance"] is None

@@ -584,8 +584,11 @@ async def calibration(request):
     The one number here that can say the instrument is wrong.
     """
     try:
+        # The judge's whole ranking, not just its winner: a review yields one
+        # comparison per pair of drafts, and throwing away all but the top one
+        # wastes most of what the reviewer just did.
         winners = {
-            run.run_id: (run.verdict.winner if run.verdict else None)
+            run.run_id: (run.verdict.ranking if run.verdict else [])
             for _recorded, run in load_runs()
         }
     except OSError as exc:

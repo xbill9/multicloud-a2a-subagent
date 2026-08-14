@@ -114,49 +114,89 @@ def for_run(run_id: str, path: Path | None = None) -> list[HumanReview]:
     return [review for review in load(path) if review.run_id == run_id]
 
 
-def agreement(runs_by_id: dict[str, str], path: Path | None = None) -> dict:
-    """How often the judge and a human picked the same winner.
+def _pairs(order: list[str]) -> dict[tuple[str, str], int]:
+    """Every ordered pair in a ranking, as -1/1 by which came first."""
+    out: dict[tuple[str, str], int] = {}
+    for i, a in enumerate(order):
+        for b in order[i + 1 :]:
+            key = (a, b) if a < b else (b, a)
+            out[key] = 1 if (a, b) == key else -1
+    return out
 
-    ``runs_by_id`` maps run_id -> the judge's winner, which the caller reads
-    from the run store; this module deliberately does not import it, so
-    feedback stays readable without the runs beside it.
 
-    The number to distrust first is ``reviewed``. Agreement over three runs is
-    not a calibration, and the caller is told the count so it can decline to
-    report a rate -- the same rule `evaluations.report` applies to win rates.
+def agreement(judge_rankings: dict[str, list[str]], path: Path | None = None) -> dict:
+    """How far a human and the judge agree, on two measures.
+
+    ``judge_rankings`` maps run_id -> the judge's ranking, best first. Read by
+    the caller from the run store; this module deliberately does not import it,
+    so feedback stays readable without the runs beside it.
+
+    **Winner agreement** is the headline and the weaker of the two. It is one
+    bit per run, and with three clouds a coin lands on it a third of the time,
+    so it takes a lot of afternoons to say anything.
+
+    **Pair concordance** is what makes a review worth reviewing. Every run
+    yields one comparison per *pair* of drafts -- three for a three-cloud run --
+    and asks the narrow question the rubric actually needs answered: when the
+    judge put A above B, did the person? Five reviewed runs give fifteen
+    comparisons rather than five, which is the difference between a number and
+    an anecdote.
+
+    Neither is reported as a rate until something has been reviewed: "they never
+    agree" and "nobody has looked" are opposite claims and must not render as
+    the same figure.
     """
     agreed = 0
     disagreed = 0
+    concordant = 0
+    discordant = 0
     unreviewed = 0
     citations = {verdict: 0 for verdict in CITATION_VERDICTS}
 
     seen: set[str] = set()
     for review in load(path):
-        judge_winner = runs_by_id.get(review.run_id)
+        judge_order = judge_rankings.get(review.run_id)
         for draft in review.drafts:
             for citation in draft.citations:
                 if citation.verdict in citations:
                     citations[citation.verdict] += 1
-        if judge_winner is None:
+        if judge_order is None:
             unreviewed += 1
             continue
         seen.add(review.run_id)
-        if review.winner is None:
-            continue
-        if review.winner == judge_winner:
-            agreed += 1
-        else:
-            disagreed += 1
+
+        if review.winner is not None and judge_order:
+            if review.winner == judge_order[0]:
+                agreed += 1
+            else:
+                disagreed += 1
+
+        human_pairs = _pairs(review.ranking)
+        judge_pairs = _pairs(list(judge_order))
+        for key, human in human_pairs.items():
+            judge = judge_pairs.get(key)
+            if judge is None:
+                continue
+            if judge == human:
+                concordant += 1
+            else:
+                discordant += 1
 
     total = agreed + disagreed
+    pairs = concordant + discordant
     return {
         "reviewed": len(seen),
         "with_a_winner": total,
         "agreed": agreed,
         "disagreed": disagreed,
-        # None rather than 0.0 when nothing has been reviewed: "the judge and a
-        # human never agree" and "nobody has looked" are opposite claims.
         "agreement_rate": (agreed / total) if total else None,
+        # The measure worth watching. 1.0 is perfect agreement on ordering,
+        # 0.5 is a coin, 0.0 is a judge that is exactly backwards -- which would
+        # be a more useful finding than anything in between.
+        "pairs_compared": pairs,
+        "concordant": concordant,
+        "discordant": discordant,
+        "concordance": (concordant / pairs) if pairs else None,
         "citations": citations,
         "reviews_for_unknown_runs": unreviewed,
     }
