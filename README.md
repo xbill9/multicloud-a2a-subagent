@@ -137,6 +137,45 @@ and is now a measured one. Tool parity in *availability* is not parity in
 Do not read the table above as a model comparison. It is one brief, one run,
 one rubric, and two of the three models did no retrieval at all.
 
+### The rotation claim did not survive a second scorer
+
+Measured 2026-08-14 with `python -m evaluations.rejudge --judge llm`, which
+re-ranks the stored corpus without mutating it:
+
+```
+cloud      avail   win% rubric   win% llm   regret rubric   regret llm
+azure        96%          43%         87%            0.97         0.52
+gcp          58%          43%         43%            1.54         2.21
+aws         100%          33%          0%            1.32         9.38
+```
+
+Under the deterministic rubric no cloud owns the winner and a panel is
+justified. **Under a model judge, Azure wins 87% of the briefs it answered and
+AWS wins none** -- and by this project's own rule that reads "one cloud wins
+nearly every brief; use that cloud."
+
+So the honest statement is that **the best-of-breed claim is a property of the
+scorer, not yet of the clouds**, and it should not be made until a human says
+which scorer is right.
+
+Two things follow, and the second is more interesting than the first.
+
+The rubric appears to be **compressing a real quality difference**. It puts
+nova-micro 1.32 points behind the panel's best; the model judge puts it 9.38
+behind. Nova micro is a small, cheap model being asked to write prose, so the
+larger gap is the more plausible one -- which is direct evidence for the thing
+this page has said about the rubric all along, now with a number.
+
+And the model judge is **not simply favouring its own vendor**: it is Gemini,
+and it ranks the Gemini participant at 43% while putting Azure at 87%. That
+weakens the obvious objection to it without removing the shared-vendor caveat
+entirely.
+
+**What survives untouched is availability.** No judge can change whether a
+draft existed, and the column is identical under both. On this corpus the
+strongest argument for the panel is not that it produces better answers -- that
+is now contested -- but that it produces an answer at all when a member cannot.
+
 ### The controls, and the hole they found
 
 Measured 2026-08-13, on the corrected harness:
