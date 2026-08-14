@@ -19,6 +19,7 @@ from time import perf_counter
 
 from coordinator import trace
 from coordinator.errors import AdapterError, FailureKind
+from coordinator.events import emit
 from coordinator.judge import (
     RubricJudge,
     critique_for,
@@ -93,6 +94,13 @@ class ResearchMesh:
         failures: dict[str, str] = {}
         traces: dict[str, list[TraceStep]] = {}
 
+        emit(
+            "run",
+            f"started: {len(self._participants)} cloud(s), "
+            f"up to {self._max_rounds} round(s), pass mark {self._pass_mark:g}",
+            run_id=run_id,
+            topic=request.topic[:200],
+        )
         log.info(
             "run %s started: %d participant(s) %s, topic %r",
             run_id,
@@ -215,6 +223,13 @@ class ResearchMesh:
             for entry in candidates:
                 sent_back_at[entry.source] = entry.total
 
+            emit(
+                "round",
+                f"round {round_number}: sending back "
+                + ", ".join(f"{name} ({revisions[name].score:.1f})" for name in revisions),
+                run_id=run_id,
+                round=round_number,
+            )
             log.info(
                 "run %s round %d: %s below %.1f, sending back",
                 run_id,
@@ -336,6 +351,14 @@ class ResearchMesh:
                     pass
         verdict.started_at = started_at
         verdict.elapsed_ms = (perf_counter() - started) * 1000
+        emit(
+            "judge",
+            f"{verdict.judge} ranked {len(drafts)} draft(s) in "
+            f"{verdict.elapsed_ms:.0f}ms -> {verdict.winner or 'no winner'}",
+            run_id=run_id,
+            winner=verdict.winner,
+            scores={entry.source: entry.total for entry in verdict.verdicts},
+        )
         log.info(
             "run %s judged by %s in %.0fms: winner %s%s",
             run_id,
@@ -372,27 +395,72 @@ class ResearchMesh:
                 "research.revision": revision is not None,
             },
         ) as leg_span:
+            leg_started = perf_counter()
+            emit(
+                "leg",
+                f"{participant.name}: dialling"
+                + (f" (rewrite, round {revision.round})" if revision is not None else ""),
+                run_id=run_id,
+                cloud=participant.name,
+                auth=participant.auth,
+            )
             try:
                 async with asyncio.timeout(self._timeout_seconds):
                     if revision is None:
                         # Not `research(request, None)`: a source written before
                         # the loop takes one argument, and every A2A server that
                         # is not this repo's is such a source.
-                        return await participant.source.research(request)
-                    return await participant.source.research(request, revision)
+                        draft = await participant.source.research(request)
+                    else:
+                        draft = await participant.source.research(request, revision)
+                    emit(
+                        "leg",
+                        f"{participant.name}: answered, {draft.word_count}w in "
+                        f"{(perf_counter() - leg_started) * 1000:.0f}ms"
+                        + (
+                            f", {draft.searches} search(es)"
+                            if draft.searches >= 0
+                            else ""
+                        ),
+                        run_id=run_id,
+                        cloud=participant.name,
+                        model=draft.model,
+                        words=draft.word_count,
+                        searches=draft.searches,
+                        latency_ms=draft.latency_ms,
+                    )
+                    return draft
             except TimeoutError:
                 message = AdapterError(
                     FailureKind.TIMEOUT, f"exceeded {self._timeout_seconds}s"
                 ).safe_message()
                 failures[participant.name] = message
                 _mark_failed(leg_span, "timeout", message)
+                emit(
+                    "error",
+                    f"{participant.name}: {message}",
+                    run_id=run_id,
+                    cloud=participant.name,
+                )
             except AdapterError as exc:
                 failures[participant.name] = exc.safe_message()
                 _mark_failed(leg_span, exc.kind.value, exc.safe_message())
+                emit(
+                    "error",
+                    f"{participant.name}: {exc.safe_message()}",
+                    run_id=run_id,
+                    cloud=participant.name,
+                )
             except Exception as exc:  # noqa: BLE001 - adapter boundary converts SDK failures
                 message = AdapterError(FailureKind.PROTOCOL, str(exc)).safe_message()
                 failures[participant.name] = message
                 _mark_failed(leg_span, "protocol", message)
+                emit(
+                    "error",
+                    f"{participant.name}: {message}",
+                    run_id=run_id,
+                    cloud=participant.name,
+                )
             finally:
                 # Recorded even on the success path's return, which is why this
                 # is a finally and not a line after the try.
@@ -412,6 +480,22 @@ class ResearchMesh:
                 # lines land in Cloud Logging by a different path, and carry the
                 # provider's own request id, which is the part someone else can
                 # check.
+                for step in leg.steps:
+                    emit(
+                        "wire",
+                        f"{participant.name}: {step.phase} {step.method} "
+                        f"{step.host}{step.path} -> "
+                        f"{step.status if step.status is not None else '-'} "
+                        f"in {step.elapsed_ms:.0f}ms"
+                        + (f" [{step.request_id}]" if step.request_id else ""),
+                        run_id=run_id,
+                        cloud=participant.name,
+                        phase=step.phase,
+                        status=step.status,
+                        elapsed_ms=step.elapsed_ms,
+                        request_id=step.request_id,
+                        ok=step.ok,
+                    )
                 for step in leg.steps:
                     log.info(
                         "run %s leg %s %s %s %s%s -> %s in %.0fms%s",

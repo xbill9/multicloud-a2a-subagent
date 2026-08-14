@@ -47,11 +47,17 @@ from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 from starlette.applications import Starlette
-from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from starlette.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
 from starlette.routing import Route
 
 from clients import CLIENT_STACKS
 from coordinator.errors import AdapterError
+from coordinator.events import BUS
 from coordinator.flow import build_flow
 from coordinator.frontend import PAGE
 from coordinator.judge import JUDGE_MODES, judge_mode, load_judge
@@ -258,6 +264,51 @@ async def timeline(request):
     return PlainTextResponse(render_timeline(runs[-index][1]))
 
 
+async def ping(request):
+    """Echo, touching nothing.
+
+    The page samples this once a second to measure its own round trip to the
+    master, and the number is worth having for a reason beyond curiosity: every
+    latency on this page is measured from the browser, so without it a 400ms
+    reading cannot be told apart from a 300ms leg behind a 100ms link. Subtract
+    this and what is left is the mesh.
+
+    Deliberately does no work -- no store read, no peer lookup, nothing that
+    could make the ping report on anything but the link.
+    """
+    return JSONResponse({"pong": request.query_params.get("t", "")})
+
+
+async def stream(request):
+    """Server-sent events for a run in progress.
+
+    A run with models in the path takes 30 seconds to two minutes, and the page
+    used to show a spinner for all of it while the interesting part -- a
+    credential minted, a card fetched, a leg answering, a draft sent back --
+    happened invisibly in the service log.
+
+    Replays the recent buffer first, so a page opened mid-run shows what has
+    already happened rather than an empty log.
+    """
+
+    async def events():
+        # A comment frame up front: it commits the response and defeats any
+        # proxy buffering that would otherwise hold the stream until the first
+        # real event, which on a cold mesh can be seconds away.
+        yield ": open\n\n"
+        # No handler for CancelledError: the client going away is how this
+        # generator is *meant* to end, and catching it only to re-raise adds a
+        # frame that says nothing.
+        async for event in BUS.subscribe():
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 async def flow(request):
     """One run, shaped for the debug view. `?n=2` walks back through the store.
 
@@ -300,6 +351,8 @@ app = Starlette(
         Route("/api/research", research, methods=["POST"]),
         Route("/api/last", last_run),
         Route("/api/timeline", timeline),
+        Route("/api/ping", ping),
+        Route("/api/stream", stream),
         Route("/api/flow", flow),
         Route("/api/audit", audit),
     ]

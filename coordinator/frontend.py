@@ -168,6 +168,31 @@ PAGE = """<!doctype html>
   .phase { display: inline-block; width: 18px; height: 18px; line-height: 18px;
            text-align: center; border-radius: 4px; background: var(--line);
            font-size: 11px; }
+
+  /* live telemetry + event trace, after frontend/src/Telemetry.jsx in
+     ~/way-back-home/level_3_new. Stat tiles with a sparkline each, never
+     gauges: none of these numbers has a natural maximum, so a filled meter
+     would have to invent a ceiling and would read as "80% of something". */
+  .telem { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 10px; }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .tile .k { color: var(--dim); font-size: 10px; text-transform: uppercase;
+             letter-spacing: .12em; display: flex; justify-content: space-between;
+             align-items: center; gap: 6px; }
+  /* tabular-nums so the digits stop dancing once a second */
+  .tile .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile .u { color: var(--dim); font-size: 11px; margin-left: 4px; }
+  .tile .d { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .livedot { font-size: 10px; text-transform: uppercase; letter-spacing: .18em; }
+  .evt { font-family: var(--mono); font-size: 12px; max-height: 260px;
+         overflow-y: auto; border: 1px solid var(--line); border-radius: 8px;
+         padding: 8px 10px; }
+  .evt.closed { max-height: 66px; }
+  .evt div { display: flex; gap: 8px; line-height: 1.5; }
+  .evt .ts { color: var(--dim); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  .evt .kd { flex: 0 0 52px; text-transform: uppercase; font-size: 10px;
+             letter-spacing: .08em; padding-top: 2px; }
+  .evt .tx { min-width: 0; word-break: break-word; }
 </style>
 </head>
 <body>
@@ -180,6 +205,7 @@ PAGE = """<!doctype html>
   <div class="tabs">
     <button class="on" data-tab="run">run a brief</button>
     <button data-tab="last">last run</button>
+    <button data-tab="live">live</button>
     <button data-tab="flow">flow</button>
     <button data-tab="reviews">reviews</button>
     <button data-tab="wire">wire</button>
@@ -236,6 +262,27 @@ PAGE = """<!doctype html>
        rendered exactly as it was live. This is the shareable one: it survives
        the instance that produced it.</p>
     <div id="last"></div>
+  </section>
+
+  <section id="tab-live" hidden>
+    <p class="sub">What the mesh is doing, now. The transport figure is this
+       browser's round trip to the master and nothing else &mdash; subtract it
+       from any latency here and what is left is the mesh.</p>
+    <div class="panel">
+      <div class="k" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+        <span class="sub" style="margin:0">transport</span>
+        <span id="liveState" class="livedot">idle</span>
+      </div>
+      <div class="telem" id="telem"></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <button id="evtToggle" style="margin:0;background:transparent;color:var(--dim)">trace &#9656; <span id="evtCount">0</span></button>
+        <span><button id="evtClear" style="margin:0;background:transparent;color:var(--dim)">clear</button>
+        <button id="evtSave" style="margin:0;background:transparent;color:var(--dim)">save</button></span>
+      </div>
+      <div class="evt closed" id="evt"><div class="ts">no events yet</div></div>
+    </div>
   </section>
 
   <section id="tab-flow" hidden>
@@ -685,11 +732,184 @@ function renderWire() {
   </div>`;
 }
 
+
+// --------------------------------------------------------------------------
+// Live telemetry and the event trace
+// --------------------------------------------------------------------------
+//
+// Both panels follow frontend/src/Telemetry.jsx and EventTrace.jsx in
+// ~/way-back-home/level_3_new, and three of that design's decisions are carried
+// over deliberately:
+//
+//   * Sparklines, not gauges. None of these numbers has a natural maximum, so a
+//     filled meter would have to invent a ceiling. Each line is scaled to its
+//     own peak and shows shape only; the absolute value is the figure beside it.
+//   * State reads as a word as well as a colour, so it survives a colourblind
+//     viewer and a monochrome projector.
+//   * A live/idle header, so a panel of zeroes reads as "not started" rather
+//     than "broken".
+//
+// And one number that only exists because of that design: `net` is this
+// browser's round trip to the master, measured against an endpoint that touches
+// nothing. Every latency on this page is measured from here, so without it a
+// 400ms reading cannot be told apart from a 300ms leg behind a 100ms link.
+
+const HISTORY = 40;           // ~40 samples at 1Hz
+const EVT_MAX = 400;
+
+let netHistory = [];
+let netMs = null;
+let events = [];
+let evtOpen = false;
+let sse = null;
+let runLive = false;
+
+const KIND_COLOR = {
+  run: '#7aa2f7', leg: '#00c176', wire: '#8a8f98',
+  judge: '#e0af68', round: '#e0af68', error: '#d05a5a',
+};
+
+function sparkline(series, color) {
+  const w = 84, h = 18;
+  if (series.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+  // Scaled to this series' own peak: shape only, never an implied ceiling.
+  const peak = Math.max(...series, 1);
+  const step = w / (HISTORY - 1);
+  const pts = series.map((v, i) => {
+    const x = (i + (HISTORY - series.length)) * step;
+    const y = h - (v / peak) * (h - 2) - 1;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg width="${w}" height="${h}"><polyline points="${pts}" fill="none"
+    stroke="${color}" stroke-width="2" stroke-linejoin="round"
+    stroke-linecap="round" opacity="0.85"/></svg>`;
+}
+
+// Thresholds are about this link, not about the mesh: past ~200ms the transport
+// is a real part of what every other number on this page reads as.
+function netColor(ms) {
+  if (ms == null) return 'var(--dim)';
+  if (ms > 200) return '#d05a5a';
+  if (ms > 80) return '#e0af68';
+  return '#00c176';
+}
+
+function tile(label, value, unit, detail, color, spark) {
+  return `<div class="tile">
+    <div class="k"><span>${esc(label)}</span>${spark || ''}</div>
+    <div class="v" style="color:${color || 'var(--text)'}">${value}<span class="u">${esc(unit || '')}</span></div>
+    ${detail ? `<div class="d">${detail}</div>` : ''}
+  </div>`;
+}
+
+function renderTelemetry() {
+  const legs = events.filter(e => e.kind === 'leg');
+  const answered = legs.filter(e => (e.text || '').includes('answered'));
+  const wire = events.filter(e => e.kind === 'wire');
+  const errors = events.filter(e => e.kind === 'error');
+  const judged = events.filter(e => e.kind === 'judge');
+
+  // Model time with the transport removed. The leg latency is what the
+  // coordinator measured end to end; the credential and discovery calls on the
+  // same leg are what it spent getting permission to ask. The difference is the
+  // model, and it is the number worth arguing about.
+  const overhead = wire.filter(e => e.phase === 'credential' || e.phase === 'discovery')
+                       .reduce((a, e) => a + (e.elapsed_ms || 0), 0);
+  const legMs = answered.reduce((a, e) => a + (e.latency_ms || 0), 0);
+  const think = answered.length ? Math.max(0, legMs - overhead) : null;
+
+  const searches = answered.reduce(
+    (a, e) => a + (typeof e.searches === 'number' && e.searches > 0 ? e.searches : 0), 0);
+
+  $('telem').innerHTML =
+    tile('Net', netMs == null ? '--' : netMs, 'ms',
+         'browser &rarr; master, touches nothing',
+         netColor(netMs), sparkline(netHistory, '#7aa2f7')) +
+    tile('Legs answered', `${answered.length}`, `of ${new Set(legs.map(e => e.cloud)).size || 0}`,
+         errors.length ? `${errors.length} failed` : '', answered.length ? '#00c176' : null) +
+    tile('Think', think == null ? '--' : Math.round(think), 'ms',
+         `leg total minus ${Math.round(overhead)}ms auth + discovery`,
+         'var(--text)') +
+    tile('Wire calls', `${wire.length}`, '',
+         `${wire.filter(e => e.request_id).length} with a provider id`) +
+    tile('Searches', `${searches}`, '',
+         answered.length && !searches ? 'none &mdash; drafts written from recall' : '') +
+    tile('Rounds judged', `${judged.length}`, '',
+         judged.length ? esc(judged[judged.length - 1].winner || '') : '');
+
+  $('liveState').textContent = runLive ? 'live' : 'idle';
+  $('liveState').style.color = runLive ? '#00c176' : 'var(--dim)';
+}
+
+function renderEvents() {
+  $('evtCount').textContent = events.length;
+  const recent = evtOpen ? events.slice(-120) : events.slice(-3);
+  const box = $('evt');
+  box.classList.toggle('closed', !evtOpen);
+  box.innerHTML = recent.length
+    ? recent.map(e => `<div>
+        <span class="ts">${esc((e.t || '').slice(11, 19))}</span>
+        <span class="kd" style="color:${KIND_COLOR[e.kind] || 'var(--dim)'}">${esc(e.kind)}</span>
+        <span class="tx">${esc(e.text)}</span></div>`).join('')
+    : '<div class="ts">no events yet</div>';
+  // Pinned to the newest line, the way a log viewer should be.
+  if (evtOpen) box.scrollTop = box.scrollHeight;
+}
+
+function pushEvent(e) {
+  events.push(e);
+  if (events.length > EVT_MAX) events = events.slice(-EVT_MAX);
+  if (e.kind === 'run') runLive = true;
+  if (e.kind === 'judge') runLive = false;
+  renderEvents();
+  renderTelemetry();
+}
+
+function openStream() {
+  if (sse) return;
+  try {
+    sse = new EventSource('api/stream');
+    sse.onmessage = (m) => { try { pushEvent(JSON.parse(m.data)); } catch (err) { /* a torn frame is not worth a broken page */ } };
+    // EventSource reconnects on its own; this only stops it claiming to be live
+    // while it is not.
+    sse.onerror = () => { runLive = false; renderTelemetry(); };
+  } catch (err) { /* no stream: the panels still render from a completed run */ }
+}
+
+// One probe a second. A few dozen bytes, and it keeps the reading current
+// without a second timer.
+async function samplePing() {
+  const started = performance.now();
+  try {
+    await fetch('api/ping?t=' + started, {cache: 'no-store'});
+    netMs = Math.round(performance.now() - started);
+  } catch (e) { netMs = null; }
+  netHistory = [...netHistory, netMs == null ? 0 : netMs].slice(-HISTORY);
+  renderTelemetry();
+}
+
+$('evtToggle').onclick = () => { evtOpen = !evtOpen; renderEvents(); };
+$('evtClear').onclick = () => { events = []; renderEvents(); renderTelemetry(); };
+$('evtSave').onclick = () => {
+  const blob = new Blob([JSON.stringify(events, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'research-events.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+openStream();
+samplePing();
+setInterval(samplePing, 1000);
+renderTelemetry();
+renderEvents();
+
 document.querySelectorAll('.tabs button').forEach(btn => {
   btn.onclick = async () => {
     document.querySelectorAll('.tabs button').forEach(b =>
       b.classList.toggle('on', b === btn));
-    ['run', 'last', 'flow', 'reviews', 'wire', 'audit'].forEach(tab => {
+    ['run', 'last', 'live', 'flow', 'reviews', 'wire', 'audit'].forEach(tab => {
       $('tab-' + tab).hidden = btn.dataset.tab !== tab;
     });
     if (['flow', 'reviews', 'wire'].includes(btn.dataset.tab)) { await loadFlow(); }

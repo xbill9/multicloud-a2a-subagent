@@ -574,3 +574,105 @@ def test_every_element_the_script_reaches_for_exists():
 
     for element_id in ("tab-flow", "tab-reviews", "tab-wire", "flow", "reviews", "wire", "flowNav"):
         assert f'id="{element_id}"' in PAGE, element_id
+
+
+# --------------------------------------------------------------------------
+# Live telemetry: the ping and the event stream
+# --------------------------------------------------------------------------
+
+
+def test_ping_touches_nothing(client, monkeypatch):
+    """The page subtracts this from every latency it shows, so it has to
+    measure the link and nothing else.
+
+    If it read the store or looked up a peer, a slow disk would be reported as
+    a slow network and then subtracted from the mesh's own numbers -- making
+    the mesh look faster exactly when the machine was struggling.
+    """
+
+    def explode(*args, **kwargs):
+        raise AssertionError("ping did work")
+
+    monkeypatch.setattr(service, "load_runs", explode)
+    monkeypatch.setattr(service, "build_mesh", explode)
+
+    response = client.get("/api/ping?t=123")
+
+    assert response.status_code == 200
+    assert response.json() == {"pong": "123"}
+
+
+def test_a_run_emits_events_for_what_it_is_doing(client):
+    """A run takes 30 seconds to two minutes with models in it. Everything
+    interesting was already happening and reached only the service log."""
+    from coordinator.events import BUS
+
+    # A marker rather than a prior length: the replay is a *bounded* deque, so
+    # once earlier tests have filled it the old events are evicted and slicing
+    # by the previous count silently yields nothing. The test then passes or
+    # fails on how many tests ran before it, which is the worst kind of flake.
+    BUS.publish("run", "--- marker ---")
+    marker = BUS.replay()[-1]
+    client.post("/api/research", json=brief())
+    replay = BUS.replay()
+    published = replay[replay.index(marker) + 1 :]
+
+    kinds = {event["kind"] for event in published}
+    assert "run" in kinds, "no event for the run starting"
+    assert "leg" in kinds, "no event for a cloud being dialled"
+    assert "judge" in kinds, "no event for the verdict"
+    assert all("t" in event and "text" in event for event in published)
+
+
+def test_a_slow_subscriber_loses_history_not_the_present():
+    """A forgotten browser tab must not grow memory without bound and must
+    never block a run. Losing the oldest events is the right failure: the
+    newest are the ones being watched."""
+    import asyncio
+
+    from coordinator.events import SUBSCRIBER_BUFFER, EventBus
+
+    async def scenario():
+        bus = EventBus()
+        stream = bus.subscribe()
+        await stream.__anext__.__self__.asend(None) if False else None
+        # Subscribe without reading, then flood well past the buffer.
+        agen = bus.subscribe()
+        task = asyncio.ensure_future(agen.__anext__())
+        await asyncio.sleep(0)
+        for index in range(SUBSCRIBER_BUFFER * 2):
+            bus.publish("wire", f"event {index}")
+        first = await task
+        await agen.aclose()
+        return first
+
+    first = asyncio.run(scenario())
+    # It kept going and handed over an event rather than raising or hanging.
+    assert first["kind"] == "wire"
+
+
+def test_publishing_never_raises_even_with_a_broken_subscriber():
+    """An observer that can take the mesh down is not an observer."""
+    from coordinator.events import EventBus
+
+    bus = EventBus()
+
+    class Hostile:
+        def put_nowait(self, item):
+            raise RuntimeError("nope")
+
+    bus._subscribers.add(Hostile())
+    bus.publish("run", "started")  # must not raise
+
+    assert bus.replay()[-1]["text"] == "started"
+
+
+def test_the_page_has_the_live_panels():
+    from coordinator.frontend import PAGE
+
+    assert 'id="tab-live"' in PAGE
+    assert 'id="telem"' in PAGE
+    assert 'id="evt"' in PAGE
+    # The ping loop and the stream are what make it live rather than a snapshot.
+    assert "api/ping" in PAGE
+    assert "api/stream" in PAGE
