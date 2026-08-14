@@ -229,3 +229,35 @@ def test_a_researcher_can_import_telemetry_without_the_coordinator():
         check=False,
     )
     assert result.returncode == 0, result.stderr[-1500:]
+
+
+def test_a_record_without_trace_fields_still_formats(monkeypatch, capsys):
+    """The format string names OpenTelemetry fields; a record built by a library
+    that makes its own does not have them.
+
+    `logging` then raises inside `formatMessage`, swallows it, and prints a
+    traceback with no message attached. Measured on the deployed GCP researcher
+    on 2026-08-14: every ADK line became a KeyError traceback in Cloud Logging
+    and the log was unreadable.
+    """
+    import importlib
+    import logging
+
+    from protocol import telemetry
+
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "console")
+    reloaded = importlib.reload(telemetry)
+    reloaded.setup("research-test")
+
+    # A record with no otel attributes at all, as a third-party library builds.
+    record = logging.LogRecord(
+        name="adk", level=logging.INFO, pathname=__file__, lineno=1,
+        msg="Sending out request, model: %s", args=("gemini-2.5-flash",), exc_info=None,
+    )
+    handler = logging.getLogger().handlers[0]
+    for f in handler.filters:
+        f.filter(record)
+
+    # The assertion is that this does not raise.
+    formatted = handler.format(record)
+    assert "gemini-2.5-flash" in formatted

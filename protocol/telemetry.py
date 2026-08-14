@@ -157,6 +157,26 @@ def _instrument_logging() -> None:
     from opentelemetry.instrumentation.logging import LoggingInstrumentor
 
     LoggingInstrumentor().instrument(set_logging_format=False)
+
+    # Guarantee the fields the format string names, on every record.
+    #
+    # The instrumentor supplies them through a log record factory, and a record
+    # that predates it -- or is built by a library that constructs its own --
+    # does not have them. `logging` then raises inside `formatMessage` while
+    # trying to format, which it swallows and prints as a traceback with no
+    # message attached to it. Measured on the deployed GCP researcher, where
+    # every ADK line ("Sending out request, model: %s...") turned into a
+    # KeyError traceback in Cloud Logging, and the actual log was unreadable.
+    #
+    # A filter rather than a fallback format: it fixes the records instead of
+    # giving up the trace correlation the format exists for.
+    class _EnsureTraceFields(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            for field in ("otelTraceID", "otelSpanID", "otelServiceName"):
+                if not hasattr(record, field):
+                    setattr(record, field, "0")
+            return True
+
     logging.basicConfig(
         format=(
             "[%(levelname)s] %(name)s "
@@ -165,6 +185,9 @@ def _instrument_logging() -> None:
         level=os.getenv("LOG_LEVEL", "INFO").upper(),
         force=True,
     )
+    guard = _EnsureTraceFields()
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(guard)
 
 
 def _instrument_httpx() -> None:
