@@ -235,3 +235,26 @@ async def test_the_budget_is_per_request_not_per_process(monkeypatch):
     counts = await asyncio.gather(one_draft(), one_draft())
 
     assert counts == [2, 2], "the two drafts shared a counter"
+
+
+async def test_a_search_in_a_child_task_is_still_counted():
+    """The bug that made every deployed draft report `searches=0`.
+
+    A context variable copies into a child task, so a *rebinding* done inside
+    the tool call -- which every agent framework here runs in its own task -- is
+    invisible to the responder that reads the total afterwards. The variable
+    therefore holds a mutable counter: mutation is seen from both sides,
+    rebinding is not.
+    """
+    import asyncio
+
+    sources_search.reset_budget()
+
+    async def as_the_framework_would():
+        await sources_search.web_search("q")
+
+    # A separate task, exactly as ADK, Strands and Agent Framework each run a
+    # tool call.
+    await asyncio.create_task(as_the_framework_would())
+
+    assert sources_search.search_count() == 1, "the child task's search was lost"

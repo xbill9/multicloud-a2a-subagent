@@ -205,20 +205,43 @@ SEARCH_BUDGET = int(os.getenv("RESEARCH_SEARCH_BUDGET", "6"))
 #: Per request, not per process.
 #:
 #: A module-level counter was wrong the moment two briefs overlapped: an agent
-#: serving concurrently would attribute one draft's searches to another, and
-#: the budget would be shared between drafts that never met. A context variable
-#: is per task and copies into anything the request spawns.
-_used: contextvars.ContextVar[int] = contextvars.ContextVar("search_used", default=0)
+#: serving concurrently would attribute one draft's searches to another, and the
+#: budget would be shared between drafts that never met.
+#:
+#: **The variable holds a mutable counter, not an integer, and that is the whole
+#: trick.** A context variable copies into a child task, so a rebinding done
+#: inside the tool call -- which every agent framework here runs in its own task
+#: -- is invisible to the responder that reads the total afterwards. Measured:
+#: switching to a plain int made every deployed draft report `searches=0` while
+#: the agents were demonstrably searching. Mutating one shared object is seen
+#: from both sides; rebinding is not.
+class _Budget:
+    __slots__ = ("used",)
+
+    def __init__(self) -> None:
+        self.used = 0
+
+
+_used: contextvars.ContextVar[_Budget] = contextvars.ContextVar("search_budget")
+
+
+def _budget() -> _Budget:
+    try:
+        return _used.get()
+    except LookupError:
+        fresh = _Budget()
+        _used.set(fresh)
+        return fresh
 
 
 def search_count() -> int:
-    """Searches made in the current request's context."""
-    return _used.get()
+    """Searches made for the draft currently being written."""
+    return _budget().used
 
 
 def reset_budget() -> None:
     """Start a fresh budget for one draft. Called by the serving wrappers."""
-    _used.set(0)
+    _used.set(_Budget())
 
 
 async def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
@@ -238,7 +261,8 @@ async def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
     if backend is None:
         return "Search is disabled for this run."
 
-    used = _used.get()
+    budget = _budget()
+    used = budget.used
     if used >= SEARCH_BUDGET:
         # Reported to the model as an instruction, not an error. A researcher
         # told only "no" keeps trying; one told to write with what it has stops.
@@ -248,7 +272,7 @@ async def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
             f"have already found, and say plainly which points you could not "
             f"verify. Do not invent sources for them."
         )
-    _used.set(used + 1)
+    budget.used = used + 1
     # One span per search. This is the half of the picture the coordinator can
     # never see: a researcher's retrieval happens on another cloud, outside any
     # trace this mesh opens, and until now the only evidence it happened at all
@@ -287,7 +311,7 @@ def search_summary() -> dict:
         "provider": search_provider(),
         "enabled": search_enabled(),
         "budget": SEARCH_BUDGET,
-        "searches": _used.get(),
+        "searches": _budget().used,
     }
 
 
