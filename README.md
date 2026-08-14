@@ -61,15 +61,25 @@ router.
 
 ## Status: read this before anything else
 
-**Deployed on all three clouds and exercised together, 2026-08-12.** The
-research/judge/audit architecture replaced a currency-conversion mesh earlier
-the same day; the master, the front end, all three researcher agents and all
-three federation modes are live and have answered a brief end to end.
+**Deployed on all three clouds with models in the path, 2026-08-13.** The
+sentence this section carried for a week -- *no model has written a draft here,
+deployed or otherwise* -- is no longer true. One brief, three vendors' models,
+three federation modes, search on all three, and the judge loop:
 
-What that does **not** mean, and the rest of this page is careful about: no
-model has written a draft here, deployed or otherwise. Every number below came
-from `direct`-brain agents returning canned text. The mesh is proven; the
-comparison it exists to make has not been run once.
+```
+run 20260813T213645-781a13   elapsed 114.3s   3/3 clouds   0 failures
+
+  round 1: aws 19.5   azure 17.0   gcp 13.8   -> aws
+  round 2: aws 19.5   azure 17.0   gcp 21.1   -> gcp
+
+  1. gcp    21.1  cove 4.5  spec 5.0  evid 5.0  stru 3.5  conc 3.1  gemini-2.5-flash
+  2. aws    19.5  cove 4.5  spec 5.0  evid 0.0  stru 5.0  conc 5.0  nova-micro
+  3. azure  17.0  cove 4.0  spec 5.0  evid 0.0  stru 3.0  conc 5.0  gpt-5-mini
+```
+
+Gemini's first draft scored 13.8, was sent back with a critique naming its
+weakest dimensions, and returned at 21.1 -- which changed the winner. That is
+the loop doing the one thing a single-shot ranking cannot.
 
 | | built | tested | run locally | deployed | measured |
 |---|---|---|---|---|---|
@@ -77,23 +87,61 @@ comparison it exists to make has not been run once.
 | Master service — front end page | yes | served, not rendered | served | **yes** | **no** |
 | Containerless deploy (`Procfile`, source build) | yes | cannot be | n/a | **yes** | yes |
 | Trace + timeline (`coordinator/trace.py`) | yes | yes | yes | **yes** | yes |
-| Cross-cloud federation (`coordinator/auth.py`) | unchanged | yes | n/a | **yes** | **yes, 2026-08-12** |
+| Cross-cloud federation — the legs run | yes | yes | n/a | **yes** | **yes, 2026-08-13** |
+| Cross-cloud federation — negative controls | yes | yes | n/a | **yes** | **see below** |
 | Three research agents, `direct` brain | yes | yes | yes | **yes** | yes |
-| Three research agents, `llm` brain | yes | construction only | **no** | **no** | **no** |
+| Three research agents, `llm` brain | yes | yes | yes | **yes** | **yes, 2026-08-13** |
+| Web search, all three clouds | yes | yes | yes | **yes** | **yes, and barely used** |
 | Judge — deterministic rubric | yes | yes | yes | **yes** | yes |
+| Judge — the loop (gate, critique, revise) | yes | yes | yes | **yes** | **yes, 2026-08-13** |
 | Judge — model | yes | failure paths only | **no** | **no** | **no** |
-| Audit / report | yes | yes | yes (refusing) | **yes** | **no** |
+| Audit / report | yes | yes | yes | **yes** | **one run** |
 
-**"served, not rendered"** is unchanged and still means what it says: the page
-is returned and its script parses, and nobody has opened it in a browser.
+### The finding from the first model run
 
-The federation row is the one that moved furthest. It was "stale — previously
-demonstrated, not currently demonstrated" for a week. As of 2026-08-12 it is
-demonstrated again, on this code, with all three modes exercised in a single
-run from a deployed master. The timeline below is the evidence.
+Search is available on all three clouds and was used by one of them:
 
-Nothing below is a model comparison. Every number on this page was produced by
-`direct`-brain agents returning canned text.
+```
+azure  searches=2   evidence 0.0
+gcp    searches=0   evidence 5.0
+aws    searches=0   evidence 0.0
+```
+
+**The model that scored full marks on evidence never searched.** Those five
+points are citation-shaped text with nothing behind them -- the rubric counts
+the gesture, which was written down as a known weakness before search existed
+and is now a measured one. Tool parity in *availability* is not parity in
+*use*, and the shared `INSTRUCTION` never tells a researcher to search.
+
+Do not read the table above as a model comparison. It is one brief, one run,
+one rubric, and two of the three models did no retrieval at all.
+
+### The negative controls, and why they are the least trustworthy thing here
+
+All three **positive** controls pass: GCP, AWS and Azure each answer with
+credentials as deployed. The negative controls -- each leg alone with its
+credential removed -- are what turn `auth_modes` from a label into a
+demonstrated control, and on 2026-08-13 the harness that runs them was found to
+have been reporting false passes for two unrelated reasons:
+
+- a missing `python` in the Cloud Run job's launcher argv, so the container
+  exited 127 before running anything, since 2026-08-12;
+- an expired `gcloud` credential mid-run, so `gcloud` exited 1 without starting
+  an execution.
+
+`probe` read both as the leg's verdict, because it inferred the verdict from
+gcloud's exit code -- one number carrying three different facts: the mesh
+denied the call, the container could not start, or gcloud itself failed. Every
+negative control "passed" both times and nothing had been tested.
+
+It now reads the **container's** exit code, and `coordinator.cli` exits 3
+(`NO_DRAFTS_EXIT`) for "the mesh ran and no cloud answered" -- the only code
+that means denied and the only one this CLI can emit. Anything that is neither
+0 nor 3 prints `THE CONTROL DID NOT RUN`.
+
+Until a run of the corrected harness produces denials, **treat every
+`auth_modes` value in a recorded run as a label.** The legs demonstrably work;
+that they *require* their credentials is not currently demonstrated.
 
 ## What replaced the median, and what that cost
 

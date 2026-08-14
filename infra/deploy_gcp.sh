@@ -563,12 +563,19 @@ probe() {
   # polls the resource: a run of this mesh with a model in the path takes 30s
   # to two minutes per leg, and the Azure leg alone has been measured at 54s
   # and 33s across two rounds of the judge loop.
-  local waited=0 done=""
+  # Terminal when either counter holds a digit. Tested with a regex rather than
+  # for a non-empty string: `--format='value(a,b)'` joins its fields with a TAB
+  # and prints that TAB even when both are unset, so "is it non-empty" is true
+  # on the very first poll. That broke the loop instantly, the probe read the
+  # logs before the container had started, and every control reported
+  # THE CONTROL DID NOT RUN -- a guard firing correctly on a probe that had not
+  # waited for anything.
+  local waited=0 counts=""
   while [[ "$waited" -lt 600 ]]; do
-    done="$(gcloud run jobs executions describe "$execution" \
+    counts="$(gcloud run jobs executions describe "$execution" \
       --region "$REGION" --project "$PROJECT" \
       --format='value(status.succeededCount,status.failedCount)' 2>/dev/null || true)"
-    [[ -n "${done// /}" ]] && break
+    [[ "$counts" =~ [0-9] ]] && break
     sleep 10
     waited=$((waited + 10))
   done
