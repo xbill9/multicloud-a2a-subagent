@@ -116,32 +116,51 @@ and is now a measured one. Tool parity in *availability* is not parity in
 Do not read the table above as a model comparison. It is one brief, one run,
 one rubric, and two of the three models did no retrieval at all.
 
-### The negative controls, and why they are the least trustworthy thing here
+### The controls, and the hole they found
 
-All three **positive** controls pass: GCP, AWS and Azure each answer with
-credentials as deployed. The negative controls -- each leg alone with its
-credential removed -- are what turn `auth_modes` from a label into a
-demonstrated control, and on 2026-08-13 the harness that runs them was found to
-have been reporting false passes for two unrelated reasons:
+Measured 2026-08-13, on the corrected harness:
 
-- a missing `python` in the Cloud Run job's launcher argv, so the container
-  exited 127 before running anything, since 2026-08-12;
-- an expired `gcloud` credential mid-run, so `gcloud` exited 1 without starting
-  an execution.
+| probe | result |
+|---|---|
+| unauthenticated, no token — researcher, card, front end | 403, 403, 403 |
+| GCP leg, as deployed | exit 0, answered |
+| AWS leg, as deployed | exit 0, answered |
+| Azure leg, as deployed | exit 0, answered |
+| GCP leg, credential removed | exit 3, **denied** |
+| AWS leg, credential removed | exit 3, **denied** |
+| Azure leg, credential removed | exit 0, **ANSWERED** → fixed, then exit 3 |
+| GCP leg, right identity, wrong audience | exit 3, **denied** |
 
-`probe` read both as the leg's verdict, because it inferred the verdict from
-gcloud's exit code -- one number carrying three different facts: the mesh
-denied the call, the container could not start, or gcloud itself failed. Every
-negative control "passed" both times and nothing had been tested.
+Exit 3 is `coordinator.cli`'s `NO_DRAFTS_EXIT`: the container started, the mesh
+ran, and no cloud returned a draft. It is the only code that means *denied* and
+the only one this CLI can emit, which is what makes these results readable at
+all — see below.
 
-It now reads the **container's** exit code, and `coordinator.cli` exits 3
-(`NO_DRAFTS_EXIT`) for "the mesh ran and no cloud answered" -- the only code
-that means denied and the only one this CLI can emit. Anything that is neither
-0 nor 3 prints `THE CONTROL DID NOT RUN`.
+**The Azure leg was serving the internet.** Its negative control answered
+without a credential, and a direct check confirmed `/health`, the agent card
+*and* the JSON-RPC invoke endpoint all returned 200 to an anonymous caller —
+on an agent that invokes a billable Foundry model. The cause was mundane:
+`deploy_azure.sh` has a separate `auth` step that enforces Entra on the
+Container App ingress, and the deploy sequence used here was `deploy`,
+`foundry`, `fic`. Running `auth` closed it; unauthenticated callers now get
+401, the negative control now exits 3, and a full three-cloud run still passes
+through the enforced ingress with `entra-fic`.
 
-Until a run of the corrected harness produces denials, **treat every
-`auth_modes` value in a recorded run as a label.** The legs demonstrably work;
-that they *require* their credentials is not currently demonstrated.
+That is the entire justification for negative controls. Every positive signal
+in this project was green while one of three agents was open to the world.
+
+**The harness that found it had five defects of its own, four of which
+produced false passes.** In order: a missing `python` in the Cloud Run job's
+launcher argv (exit 127, since 2026-08-12); inferring the verdict from
+`gcloud`'s exit code, which conflates a denial with a dead credential and a
+crashed container; `--wait` printing nothing on stdout so the execution could
+not be named; a polling check on a TAB-joined format string that never waited;
+and a job running an image built before `NO_DRAFTS_EXIT` existed, so a denial
+could not be expressed.
+
+The first two reported six clean denials while nothing was tested. The last
+three reported `THE CONTROL DID NOT RUN`, which is wrong in the safe direction
+and is the only reason this table can be believed.
 
 ## What replaced the median, and what that cost
 
