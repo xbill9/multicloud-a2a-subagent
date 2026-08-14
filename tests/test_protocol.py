@@ -209,3 +209,61 @@ def test_a_draft_from_an_agent_that_reports_no_count_is_not_reported_as_zero():
         observed_at=datetime.now(UTC),
     )
     assert draft.searches == -1
+
+
+def test_a_provider_error_is_not_a_draft():
+    """Measured 2026-08-14.
+
+    The GCP researcher hit a Vertex quota limit, ADK put the error into the
+    event stream, and `429 RESOURCE_EXHAUSTED {'error': {'code': 429, ...}}` was
+    stamped as a draft, scored 7.97 of 25, judged, and sent back for a rewrite.
+    It cleared MIN_DRAFT_WORDS because a provider error is not short.
+
+    Three costs, none visible without reading the draft: a quota error recorded
+    in the audit as a score for gemini-2.5-flash, a round of the judge loop
+    spent rewriting it, and a run reporting 3/3 clouds answered.
+    """
+    body = (
+        "On how to mitigate this issue, please refer to: "
+        "https://google.github.io/adk-docs/agents/models/google-gemini/"
+        "#error-code-429-resource_exhausted   429 RESOURCE_EXHAUSTED. "
+        "{'error': {'code': 429, 'message': 'Resource exhausted. Please try "
+        "again later.', 'status': 'RESOURCE_EXHAUSTED'}}"
+    )
+    with pytest.raises(AdapterError) as caught:
+        parse_draft(
+            body,
+            ResearchRequest(topic="solid-state batteries"),
+            source="gcp",
+            cloud="gcp",
+            latency_ms=1.0,
+            observed_at=datetime.now(UTC),
+        )
+
+    # `provider`, not `protocol`: the remote answered, and what it said was a
+    # refusal. Filing it as protocol would read as the wire being broken.
+    assert caught.value.kind is FailureKind.PROVIDER
+
+
+def test_a_brief_that_discusses_errors_is_still_a_brief():
+    """The guard is a conjunction on purpose. A draft *about* rate limiting has
+    a heading; a provider error does not. Matching the signature alone would
+    throw away a legitimate brief on the topic."""
+    body = (
+        "# Handling 429 RESOURCE_EXHAUSTED in production\n\n"
+        "## What the error means\n\n"
+        "Vertex returns {'error': {'code': 429}} when a project exceeds its "
+        "quota, and the documented mitigation is backoff with jitter. Google "
+        "publishes per-region limits and raises them on request, which most "
+        "teams discover only after their first outage in production."
+    )
+    draft = parse_draft(
+        body,
+        ResearchRequest(topic="rate limiting"),
+        source="gcp",
+        cloud="gcp",
+        latency_ms=1.0,
+        observed_at=datetime.now(UTC),
+    )
+
+    assert draft.title.startswith("Handling 429")

@@ -33,6 +33,35 @@ from protocol.models import Draft, ResearchRequest
 #: matrix must not file it as one.
 MIN_DRAFT_WORDS = 25
 
+#: A reply that is a provider's error rather than a brief.
+#:
+#: Measured 2026-08-14: the GCP researcher hit a Vertex quota limit and ADK put
+#: the error text into the event stream, so `429 RESOURCE_EXHAUSTED {'error':
+#: {'code': 429, ...}}` was stamped as a draft, scored 7.97 of 25, judged, and
+#: sent back for a rewrite. It cleared MIN_DRAFT_WORDS because a provider error
+#: is not short, and nothing else looked.
+#:
+#: Three costs, none of them visible without reading the draft: a quota error
+#: was recorded in the audit as a score for gemini-2.5-flash, a round of the
+#: judge loop was spent rewriting it, and the run reported 3/3 clouds answering.
+#: A provider that refused is a `provider` failure and the mesh has always known
+#: how to report one -- it just could not tell that this was one.
+#:
+#: Matched conservatively: the signature must appear in a reply that has **no
+#: markdown heading at all**. Every brief this instruction asks for opens with
+#: an H1, and a real draft discussing rate limits would have one. Without that
+#: conjunction a legitimate brief about API errors would be thrown away.
+_PROVIDER_ERROR_SIGNS = (
+    "resource_exhausted",
+    "quota exceeded",
+    "'error':",
+    '"error":',
+    "internal server error",
+    "service unavailable",
+    "permission_denied",
+    "invalid_argument",
+)
+
 _HEADER_RE = re.compile(r"<!--\s*a2a-research\s+(?P<fields>[^>]*?)-->\s*", re.IGNORECASE)
 _FIELD_RE = re.compile(r"(\w+)=(\S+)")
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(?P<title>.+?)\s*#*\s*$", re.MULTILINE)
@@ -201,6 +230,15 @@ def parse_draft(
         raise AdapterError(
             FailureKind.PROTOCOL,
             f"{source} returned a header with no draft behind it",
+        )
+
+    lowered = body.lower()
+    if not _HEADING_RE.search(body) and any(
+        sign in lowered for sign in _PROVIDER_ERROR_SIGNS
+    ):
+        raise AdapterError(
+            FailureKind.PROVIDER,
+            f"{source} returned a provider error rather than a brief: {body[:300]!r}",
         )
 
     words = len(body.split())
