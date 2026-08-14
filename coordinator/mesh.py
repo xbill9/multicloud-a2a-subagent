@@ -229,6 +229,11 @@ class ResearchMesh:
                 + ", ".join(f"{name} ({revisions[name].score:.1f})" for name in revisions),
                 run_id=run_id,
                 round=round_number,
+                # The clouds being sent back, as data. The live view needs this
+                # and used to recover it by regex over the sentence above --
+                # which is a parser for prose that a reworded log line breaks
+                # silently.
+                revising=sorted(revisions),
             )
             log.info(
                 "run %s round %d: %s below %.1f, sending back",
@@ -384,7 +389,24 @@ class ResearchMesh:
         # -- and because a leg that *failed* has a trace worth keeping and no
         # draft to hang it off. `asyncio.gather` gives each of these coroutines
         # its own context copy, so three legs fill three traces with no locking.
-        with trace.collect() as leg, span(
+        def wire_event(step) -> None:
+            emit(
+                "wire",
+                f"{participant.name}: {step.phase} {step.method} "
+                f"{step.host}{step.path} -> "
+                f"{step.status if step.status is not None else '-'} "
+                f"in {step.elapsed_ms:.0f}ms"
+                + (f" [{step.request_id}]" if step.request_id else ""),
+                run_id=run_id,
+                cloud=participant.name,
+                phase=step.phase,
+                status=step.status,
+                elapsed_ms=step.elapsed_ms,
+                request_id=step.request_id,
+                ok=step.ok,
+            )
+
+        with trace.collect(wire_event) as leg, span(
             "research.leg",
             **{
                 "research.run_id": run_id,
@@ -480,22 +502,6 @@ class ResearchMesh:
                 # lines land in Cloud Logging by a different path, and carry the
                 # provider's own request id, which is the part someone else can
                 # check.
-                for step in leg.steps:
-                    emit(
-                        "wire",
-                        f"{participant.name}: {step.phase} {step.method} "
-                        f"{step.host}{step.path} -> "
-                        f"{step.status if step.status is not None else '-'} "
-                        f"in {step.elapsed_ms:.0f}ms"
-                        + (f" [{step.request_id}]" if step.request_id else ""),
-                        run_id=run_id,
-                        cloud=participant.name,
-                        phase=step.phase,
-                        status=step.status,
-                        elapsed_ms=step.elapsed_ms,
-                        request_id=step.request_id,
-                        ok=step.ok,
-                    )
                 for step in leg.steps:
                     log.info(
                         "run %s leg %s %s %s %s%s -> %s in %.0fms%s",

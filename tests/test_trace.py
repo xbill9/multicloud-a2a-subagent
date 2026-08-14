@@ -363,3 +363,53 @@ agents by March 2026 [2].
 Hosted runtimes answered in 18.8-25.1 s against 1.7-2.1 s for a container, a
 10x gap (source: cross-cloud rollup, 2026). See https://example.org/rollup.
 """
+
+
+async def test_a_step_is_observable_the_moment_it_completes():
+    """Not when the leg finishes.
+
+    The live view is fed from this callback. Without it the only source was
+    `leg.steps` after the fact, so a leg's whole conversation arrived in one
+    burst once it had already finished -- a replay wearing an animation. The
+    assertion is about *ordering*: the observer must see the card fetch before
+    the invocation that follows it, not both at the end.
+    """
+    seen: list[str] = []
+
+    with trace.collect(lambda step: seen.append(step.phase)) as leg:
+        card = httpx.Request("GET", f"https://agent.example.com{CARD}")
+        await trace.on_request(card)
+        await trace.on_response(httpx.Response(200, request=card))
+        # The observer has already been told about discovery, before the
+        # invocation below has even been made.
+        assert seen == ["discovery"]
+
+        call = httpx.Request("POST", "https://agent.example.com/")
+        await trace.on_request(call)
+        await trace.on_response(httpx.Response(200, request=call))
+
+    assert seen == ["discovery", "invoke"]
+    assert len(leg.steps) == 2
+
+
+async def test_an_observer_that_raises_does_not_break_the_leg():
+    """A live view is strictly secondary to answering the brief."""
+
+    def hostile(step):
+        raise RuntimeError("the browser went away mid-render")
+
+    with trace.collect(hostile) as leg:
+        request = httpx.Request("POST", "https://agent.example.com/")
+        await trace.on_request(request)
+        await trace.on_response(httpx.Response(200, request=request))
+
+    assert len(leg.steps) == 1, "the step was still recorded"
+
+
+async def test_a_leg_with_no_observer_still_records():
+    with trace.collect() as leg:
+        request = httpx.Request("POST", "https://agent.example.com/")
+        await trace.on_request(request)
+        await trace.on_response(httpx.Response(200, request=request))
+
+    assert len(leg.steps) == 1

@@ -193,6 +193,22 @@ PAGE = """<!doctype html>
   .evt .kd { flex: 0 0 52px; text-transform: uppercase; font-size: 10px;
              letter-spacing: .08em; padding-top: 2px; }
   .evt .tx { min-width: 0; word-break: break-word; }
+
+  /* the live topology */
+  .viz { width: 100%; height: 300px; display: block; }
+  .viz .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .viz .edge.hot { stroke: var(--accent); stroke-width: 2; }
+  .viz .node { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+  .viz .node.busy { stroke: #e0af68; }
+  .viz .node.ok { stroke: #00c176; }
+  .viz .node.bad { stroke: #d05a5a; }
+  .viz .nlabel { font: 600 12px var(--sans); fill: var(--text); }
+  .viz .nmeta { font: 11px var(--mono); fill: var(--dim); }
+  .viz .elabel { font: 10px var(--mono); fill: var(--dim); }
+  .viz .ring { fill: none; stroke: #e0af68; opacity: .55; }
+  .vizkey { display: flex; gap: 14px; flex-wrap: wrap; color: var(--dim);
+            font-size: 11px; margin-top: 6px; }
+  .vizkey b { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -268,6 +284,20 @@ PAGE = """<!doctype html>
     <p class="sub">What the mesh is doing, now. The transport figure is this
        browser's round trip to the master and nothing else &mdash; subtract it
        from any latency here and what is left is the mesh.</p>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <span class="sub" style="margin:0">messaging</span>
+        <span id="vizRound" class="livedot" style="color:var(--dim)">&mdash;</span>
+      </div>
+      <svg class="viz" id="viz" viewBox="0 0 720 300" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="vizkey">
+        <span><b style="color:#7aa2f7">&#9679;</b> credential</span>
+        <span><b style="color:#e0af68">&#9679;</b> discovery</span>
+        <span><b style="color:#00c176">&#9679;</b> invocation</span>
+        <span><b style="color:#d05a5a">&#9679;</b> failed</span>
+        <span>each dot is one round trip that happened, drawn when it completed</span>
+      </div>
+    </div>
     <div class="panel">
       <div class="k" style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
         <span class="sub" style="margin:0">transport</span>
@@ -856,6 +886,183 @@ function renderEvents() {
   if (evtOpen) box.scrollTop = box.scrollHeight;
 }
 
+
+// --------------------------------------------------------------------------
+// The live topology
+// --------------------------------------------------------------------------
+//
+// Master on the left, one node per cloud on the right, the judge below. Every
+// dot that travels an edge is one round trip that actually happened, drawn when
+// the coordinator finished it -- `coordinator/trace.py` calls back per step now
+// precisely so this can be true. Before that the wire events arrived in a burst
+// after each leg had already finished, and animating those would have been a
+// replay wearing the costume of a live view.
+//
+// Nothing here is on a timer or an easing curve pretending to be progress. A
+// node is busy because a leg was dialled and has not answered; an edge is hot
+// because a call is in flight. When nothing is happening it is still, which is
+// the honest rendering of a mesh that is idle.
+
+const VIZ = {w: 720, h: 300, mx: 130, my: 150, cx: 560};
+const PHASE_COLOR = {credential: '#7aa2f7', discovery: '#e0af68', invoke: '#00c176'};
+const vizNodes = new Map();   // cloud -> {state, meta, round}
+let vizPulses = [];           // {path, t, color, dur}
+let vizFrame = null;
+let vizJudge = {state: 'idle', text: ''};
+
+function vizLayout() {
+  const clouds = [...vizNodes.keys()];
+  if (!clouds.length) return [];
+  const span = Math.min(200, 74 * (clouds.length - 1));
+  const top = VIZ.my - span / 2;
+  return clouds.map((cloud, i) => ({
+    cloud,
+    x: VIZ.cx,
+    y: clouds.length === 1 ? VIZ.my : top + (span / (clouds.length - 1)) * i,
+  }));
+}
+
+function edgePath(to) {
+  const midX = (VIZ.mx + to.x) / 2;
+  return `M ${VIZ.mx + 46} ${VIZ.my} C ${midX} ${VIZ.my}, ${midX} ${to.y}, ${to.x - 46} ${to.y}`;
+}
+
+function drawViz() {
+  const svg = $('viz');
+  if (!svg) return;
+  const nodes = vizLayout();
+
+  if (!nodes.length) {
+    svg.innerHTML = `<text x="${VIZ.w / 2}" y="${VIZ.my}" text-anchor="middle"
+      class="nmeta">no run yet &mdash; send a brief and this fills in</text>`;
+    return;
+  }
+
+  const edges = nodes.map(n => {
+    const st = vizNodes.get(n.cloud);
+    const hot = st.state === 'busy';
+    return `<path id="edge-${esc(n.cloud)}" class="edge ${hot ? 'hot' : ''}"
+              d="${edgePath(n)}"/>
+            <text class="elabel" x="${(VIZ.mx + n.x) / 2}" y="${(VIZ.my + n.y) / 2 - 6}"
+              text-anchor="middle">${esc(st.auth || '')}</text>`;
+  }).join('');
+
+  const cloudNodes = nodes.map(n => {
+    const st = vizNodes.get(n.cloud);
+    const cls = st.state === 'busy' ? 'busy' : (st.state === 'failed' ? 'bad'
+              : (st.state === 'answered' ? 'ok' : ''));
+    // A ring only while genuinely waiting on that cloud.
+    const ring = st.state === 'busy'
+      ? `<circle class="ring" cx="${n.x}" cy="${n.y}" r="30">
+           <animate attributeName="r" values="26;40" dur="1.4s" repeatCount="indefinite"/>
+           <animate attributeName="opacity" values="0.55;0" dur="1.4s" repeatCount="indefinite"/>
+         </circle>` : '';
+    return `${ring}
+      <circle class="node ${cls}" cx="${n.x}" cy="${n.y}" r="26"/>
+      <text class="nlabel" x="${n.x}" y="${n.y + 4}" text-anchor="middle">${esc(n.cloud)}</text>
+      <text class="nmeta" x="${n.x + 36}" y="${n.y - 2}">${esc(st.meta || '')}</text>
+      <text class="nmeta" x="${n.x + 36}" y="${n.y + 12}">${esc(st.sub || '')}</text>`;
+  }).join('');
+
+  const jcls = vizJudge.state === 'busy' ? 'busy' : (vizJudge.state === 'done' ? 'ok' : '');
+  const master = `
+    <circle class="node ${runLive ? 'busy' : ''}" cx="${VIZ.mx}" cy="${VIZ.my}" r="46"/>
+    <text class="nlabel" x="${VIZ.mx}" y="${VIZ.my - 2}" text-anchor="middle">master</text>
+    <text class="nmeta" x="${VIZ.mx}" y="${VIZ.my + 14}" text-anchor="middle">gcp</text>
+    <path class="edge ${vizJudge.state === 'busy' ? 'hot' : ''}"
+      d="M ${VIZ.mx} ${VIZ.my + 46} L ${VIZ.mx} ${VIZ.my + 92}"/>
+    <circle class="node ${jcls}" cx="${VIZ.mx}" cy="${VIZ.my + 112}" r="20"/>
+    <text class="nlabel" x="${VIZ.mx}" y="${VIZ.my + 116}" text-anchor="middle">judge</text>
+    <text class="nmeta" x="${VIZ.mx + 30}" y="${VIZ.my + 116}">${esc(vizJudge.text)}</text>`;
+
+  svg.innerHTML = edges + master + cloudNodes + '<g id="vizPulses"></g>';
+  paintPulses();
+}
+
+// Pulses are positioned by hand along the path rather than with animateMotion,
+// so a dot's colour and lifetime can carry the phase and so they stop dead when
+// nothing is in flight instead of looping forever.
+function paintPulses() {
+  const layer = document.getElementById('vizPulses');
+  if (!layer) return;
+  const now = performance.now();
+  vizPulses = vizPulses.filter(p => now - p.start < p.dur);
+  layer.innerHTML = vizPulses.map(p => {
+    const el = document.getElementById('edge-' + p.cloud);
+    if (!el) return '';
+    const frac = Math.min(1, (now - p.start) / p.dur);
+    const len = el.getTotalLength();
+    const at = el.getPointAtLength(p.back ? len * (1 - frac) : len * frac);
+    return `<circle cx="${at.x.toFixed(1)}" cy="${at.y.toFixed(1)}" r="4"
+             fill="${p.color}" opacity="${(1 - frac * 0.35).toFixed(2)}"/>`;
+  }).join('');
+
+  if (vizPulses.length) {
+    vizFrame = requestAnimationFrame(paintPulses);
+  } else {
+    vizFrame = null;
+  }
+}
+
+function vizPulse(cloud, phase, ok, back) {
+  vizPulses.push({
+    cloud, start: performance.now(), dur: 900, back: !!back,
+    color: ok === false ? '#d05a5a' : (PHASE_COLOR[phase] || '#8a8f98'),
+  });
+  if (!vizFrame) vizFrame = requestAnimationFrame(paintPulses);
+}
+
+function vizEvent(e) {
+  if (e.kind === 'run') {
+    vizNodes.clear();
+    vizJudge = {state: 'idle', text: ''};
+    $('vizRound').textContent = 'round 1';
+    $('vizRound').style.color = '#e0af68';
+  }
+  if (e.kind === 'leg' && e.cloud) {
+    const st = vizNodes.get(e.cloud) || {};
+    st.auth = e.auth || st.auth;
+    if ((e.text || '').includes('dialling')) {
+      st.state = 'busy';
+      st.meta = 'dialling';
+      st.sub = '';
+    } else if ((e.text || '').includes('answered')) {
+      st.state = 'answered';
+      st.meta = `${e.words}w  ${Math.round(e.latency_ms || 0)}ms`;
+      st.sub = e.searches >= 0 ? `${e.searches} search(es)` : '';
+      // The reply, travelling back. Drawn only for a leg that really answered.
+      vizPulse(e.cloud, 'invoke', true, true);
+    }
+    vizNodes.set(e.cloud, st);
+  }
+  if (e.kind === 'wire' && e.cloud) {
+    if (!vizNodes.has(e.cloud)) vizNodes.set(e.cloud, {state: 'busy', meta: ''});
+    vizPulse(e.cloud, e.phase, e.ok);
+  }
+  if (e.kind === 'error' && e.cloud) {
+    const st = vizNodes.get(e.cloud) || {};
+    st.state = 'failed';
+    st.meta = 'failed';
+    st.sub = (e.text || '').slice(0, 40);
+    vizNodes.set(e.cloud, st);
+  }
+  if (e.kind === 'round') {
+    const n = e.round || '?';
+    $('vizRound').textContent = 'round ' + n;
+    // A cloud being sent back is busy again; one that passed keeps its result.
+    // Read from the event's own field, never parsed out of its sentence.
+    (e.revising || []).forEach(cloud => {
+      const st = vizNodes.get(cloud);
+      if (st) { st.state = 'busy'; st.meta = 'rewriting'; vizNodes.set(cloud, st); }
+    });
+  }
+  if (e.kind === 'judge') {
+    vizJudge = {state: 'done', text: `${e.winner || 'no winner'}`};
+    $('vizRound').style.color = 'var(--dim)';
+  }
+  drawViz();
+}
+
 function pushEvent(e) {
   events.push(e);
   if (events.length > EVT_MAX) events = events.slice(-EVT_MAX);
@@ -863,6 +1070,7 @@ function pushEvent(e) {
   if (e.kind === 'judge') runLive = false;
   renderEvents();
   renderTelemetry();
+  vizEvent(e);
 }
 
 function openStream() {
@@ -904,6 +1112,7 @@ samplePing();
 setInterval(samplePing, 1000);
 renderTelemetry();
 renderEvents();
+drawViz();
 
 document.querySelectorAll('.tabs button').forEach(btn => {
   btn.onclick = async () => {

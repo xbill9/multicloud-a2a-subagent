@@ -676,3 +676,45 @@ def test_the_page_has_the_live_panels():
     # The ping loop and the stream are what make it live rather than a snapshot.
     assert "api/ping" in PAGE
     assert "api/stream" in PAGE
+
+
+def test_the_round_event_carries_the_clouds_being_sent_back_as_data():
+    """Not as prose for the page to parse.
+
+    The live view marks a cloud as rewriting when the judge sends its draft
+    back. It recovered that list with a regex over the event's sentence, which
+    is a parser for English: rewording the log line breaks the view silently,
+    and nothing anywhere would say so.
+    """
+    import asyncio
+
+    from coordinator.events import BUS
+    from coordinator.mesh import ResearchMesh
+    from coordinator.models import ResearchRequest
+    from coordinator.participants import Participant
+    from tests.test_mesh import STRONG, WEAK, Improving
+
+    BUS.publish("run", "--- marker ---")
+    marker = BUS.replay()[-1]
+    asyncio.run(
+        ResearchMesh(
+            [Participant(name="aws", source=Improving("aws", [WEAK, STRONG]), cloud="aws")],
+            max_rounds=3,
+        ).run(ResearchRequest(topic="agent-to-agent protocols", max_words=300))
+    )
+    replay = BUS.replay()
+    rounds = [e for e in replay[replay.index(marker) + 1 :] if e["kind"] == "round"]
+
+    assert rounds, "no round event was published"
+    assert rounds[0]["revising"] == ["aws"]
+
+
+def test_the_page_draws_the_topology_from_events():
+    from coordinator.frontend import PAGE
+
+    assert 'id="viz"' in PAGE
+    # Every dot is a round trip that happened; nothing here is on a timer.
+    assert "vizPulse" in PAGE
+    assert "getPointAtLength" in PAGE
+    # And it reads the structured field rather than the sentence.
+    assert "e.revising" in PAGE

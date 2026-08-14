@@ -64,10 +64,19 @@ _REQUEST_ID_HEADERS = (
 
 
 class LegTrace:
-    """The steps recorded for one leg, plus the round trips still in flight."""
+    """The steps recorded for one leg, plus the round trips still in flight.
 
-    def __init__(self) -> None:
+    ``on_step`` is called as each round trip *completes*, not when the leg does.
+    Without it the only way to see these was to read ``steps`` afterwards, and a
+    live view fed that way is not live: it shows a leg's whole conversation in
+    one burst once the leg has already finished, which is a replay wearing an
+    animation. The callback is what makes "the card fetch is happening now"
+    a true statement rather than a rendering choice.
+    """
+
+    def __init__(self, on_step=None) -> None:
         self.steps: list[TraceStep] = []
+        self._on_step = on_step
         # A list per key, not one entry: a retry, a redirect or a stack that
         # polls the same URL twice puts two identical requests in flight at
         # once, and a single slot means the second overwrites the first's start
@@ -75,6 +84,15 @@ class LegTrace:
         # the second finds nothing at all, landing at offset 0 -- rendered as
         # a call that happened before the run began.
         self._pending: dict[str, list[tuple[float, datetime]]] = {}
+
+    def _record(self, step: TraceStep) -> None:
+        self.steps.append(step)
+        if self._on_step is None:
+            return
+        try:
+            self._on_step(step)
+        except Exception as exc:  # noqa: BLE001 - an observer cannot fail a leg
+            log.debug("trace observer raised, dropping the notification: %s", exc)
 
     def start(self, request: httpx.Request) -> None:
         self._pending.setdefault(_key(request), []).append(
@@ -87,7 +105,7 @@ class LegTrace:
         started = in_flight.pop(0) if in_flight else None
         url = request.url
         path = url.path or "/"
-        self.steps.append(
+        self._record(
             TraceStep(
                 phase="discovery" if path in _CARD_PATHS else "invoke",
                 label=f"{request.method} {path}",
@@ -111,7 +129,7 @@ class LegTrace:
     def credential(self, boundary: str, response: httpx.Response) -> None:
         """One identity-provider round trip, from an already-read response."""
         url = response.request.url
-        self.steps.append(
+        self._record(
             TraceStep(
                 phase="credential",
                 label=boundary,
@@ -183,9 +201,9 @@ _current: ContextVar[LegTrace | None] = ContextVar("current_leg_trace", default=
 
 
 @contextmanager
-def collect() -> Iterator[LegTrace]:
+def collect(on_step=None) -> Iterator[LegTrace]:
     """Open a trace for one leg. Nested opens replace, they do not merge."""
-    leg = LegTrace()
+    leg = LegTrace(on_step)
     token = _current.set(leg)
     try:
         yield leg
