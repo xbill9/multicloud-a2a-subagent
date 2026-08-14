@@ -10,9 +10,10 @@ compares the models over time.
 The front door is on Google. A person opens a page, types a brief, and one
 Cloud Run service fans it out, collects the drafts and judges them. That
 service runs on Cloud Run because that is what makes the whole mesh keyless: it
-is the only runtime here proven to mint workload OIDC tokens with an arbitrary
-audience, so every outbound leg is federated rather than holding a stored
-secret.
+is the only runtime whose workload OIDC minting *this project has confirmed*
+for an arbitrary audience, so every outbound leg is federated rather than
+holding a stored secret. AgentCore and Container Apps were never tested for it
+-- "not confirmed" rather than "cannot".
 
 ```text
                      you, in a browser
