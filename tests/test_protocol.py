@@ -100,7 +100,13 @@ def test_the_serving_header_round_trips():
     text = render_draft(body(), agent="aws", model="nova", brain="llm")
     fields, remainder = parse_header(text)
 
-    assert fields == {"agent": "aws", "model": "nova", "brain": "llm", "searches": "0"}
+    assert fields == {
+        "agent": "aws",
+        "model": "nova",
+        "brain": "llm",
+        "searches": "0",
+        "pv": "0",
+    }
     assert remainder.startswith("# A Title")
 
 

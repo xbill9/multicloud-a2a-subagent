@@ -119,7 +119,13 @@ def _int_field(raw: str | None) -> int:
 
 
 def render_draft(
-    body: str, *, agent: str, model: str, brain: str, searches: int = 0
+    body: str,
+    *,
+    agent: str,
+    model: str,
+    brain: str,
+    searches: int = 0,
+    prompt_version: int = 0,
 ) -> str:
     """Wrap an agent's output in the header the coordinator reads back.
 
@@ -130,7 +136,7 @@ def render_draft(
     """
     return (
         f"<!-- a2a-research agent={agent} model={model} brain={brain} "
-        f"searches={searches} -->\n{body.lstrip()}"
+        f"searches={searches} pv={prompt_version} -->\n{body.lstrip()}"
     )
 
 
@@ -211,6 +217,7 @@ def parse_draft(
         model=fields.get("model", "unknown"),
         brain=fields.get("brain", "unknown"),
         searches=_int_field(fields.get("searches")),
+        prompt_version=_int_field(fields.get("pv")),
         title=extract_title(body),
         body=body,
         observed_at=observed_at,

@@ -37,15 +37,38 @@ AGENT_NAME = "research_agent"
 
 DESCRIPTION = "An agent that writes a short, sourced research brief on a given topic"
 
+#: Bumped whenever INSTRUCTION changes, and carried in the serving header into
+#: `Draft.prompt_version`.
+#:
+#: The instruction is the experiment's independent variable in the same way the
+#: rubric is: change it and every subsequent draft is answering a different
+#: question, so runs either side are not comparable and an audit that averages
+#: them is reporting a change in the prompt as a change in the models. The
+#: rubric has had `RUBRIC_VERSION` for exactly this reason since it was written;
+#: the instruction had nothing, and it changed today.
+#:
+#: 1  the original: be specific, do not invent a citation. Said nothing about
+#:    searching, and two of three models never called the tool they were given.
+#: 2  2026-08-14: search first, and cite what you actually opened.
+INSTRUCTION_VERSION = 2
+
 INSTRUCTION = (
-    "You are a research assistant. Given a topic, you write one short research "
-    "brief and nothing else. "
+    "You are a research assistant with a web_search tool. Given a topic, you "
+    "write one short research brief and nothing else. "
+    "ALWAYS search before you write. Run at least two searches -- one for the "
+    "topic and one for each specific figure, date or claim you intend to state "
+    "-- and write the brief from what the results actually say. "
     "Open with a single markdown H1 title line, then the body under markdown "
     "headings. "
     "Be specific: name organisations, people, systems and figures, give dates, "
     "and prefer a concrete number to a hedge. "
-    "Where you are unsure, say so in one clause and move on -- do not pad, and "
-    "do not invent a citation. "
+    "Cite by pasting the URL the search returned, in full, next to the claim it "
+    "supports. Only cite a URL that appeared in your search results -- never "
+    "one you remember or reconstruct, however plausible it looks. A URL you did "
+    "not open is not a source. "
+    "If a search returns nothing useful, say in the brief that you could not "
+    "verify that point, and do not fill the gap with a citation. "
+    "Where you are unsure, say so in one clause and move on -- do not pad. "
     "If the topic is one you cannot write about, say why in one sentence "
     "instead of writing a brief about something adjacent."
 )
@@ -232,6 +255,7 @@ def wrap_responder(inner, *, agent: str, model: str):
             model=model,
             brain=model_mode(),
             searches=search_count() - before,
+            prompt_version=INSTRUCTION_VERSION,
         )
 
     return respond

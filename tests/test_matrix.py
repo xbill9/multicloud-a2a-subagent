@@ -614,3 +614,75 @@ def test_a_configured_model_is_still_none_in_direct_mode(module_name, monkeypatc
     monkeypatch.setenv("RESEARCH_MODEL_MODE", "direct")
     monkeypatch.setenv(f"RESEARCH_MODEL_{module.CLOUD.upper()}", "some-model-v9")
     assert module.model_id() == "none"
+
+
+# --------------------------------------------------------------------------
+# The instruction that makes a researcher research
+# --------------------------------------------------------------------------
+
+
+def test_the_instruction_tells_every_cloud_to_search():
+    """All three get a search tool; until 2026-08-14 nothing told them to use
+    it, and two of three never did.
+
+    Measured on the deployed mesh: a draft scored 5.0 of 5 on `evidence` having
+    made zero searches, and on the next day AWS scored 19.0 of 25 with zero
+    searches and zero citations. Tool parity in *availability* is not parity in
+    *use*.
+    """
+    from agents.common import INSTRUCTION
+
+    lowered = INSTRUCTION.lower()
+    assert "search" in lowered
+    assert "always search" in lowered, "the instruction does not require it"
+    assert "before you write" in lowered
+
+
+def test_the_instruction_forbids_citing_a_url_it_did_not_open():
+    """The failure this is aimed at is specific: a model that cites a
+    plausible-looking URL it reconstructed from memory. One such citation was
+    unresolvable from two independent networks on 2026-08-14."""
+    from agents.common import INSTRUCTION
+
+    lowered = INSTRUCTION.lower()
+    assert "only cite a url that appeared in your search results" in lowered
+    assert "not open is not a source" in lowered
+
+
+def test_the_instruction_carries_a_version():
+    """The prompt is the experiment's independent variable, exactly as the
+    rubric is. Change it and runs either side are not comparable, and an audit
+    that averages them reports a change in the prompt as a change in the
+    models."""
+    from agents.common import INSTRUCTION_VERSION
+
+    assert INSTRUCTION_VERSION >= 2
+
+
+async def test_a_draft_carries_the_prompt_version_that_produced_it():
+    """Behavioural, not a source grep.
+
+    AWS stamps through `wrap_responder` while GCP and Azure stamp inline -- the
+    two frameworks give no responder seam -- so grepping each module for the
+    constant fails on the one that is doing it correctly by delegation. What
+    matters is what comes out on the wire.
+    """
+    from agents.common import INSTRUCTION_VERSION, direct_reply, wrap_responder
+    from protocol.research import build_prompt, parse_header
+    from protocol.models import ResearchRequest
+
+    responder = wrap_responder(direct_reply, agent="aws", model="nova")
+    reply = await responder(build_prompt(ResearchRequest(topic="solid-state batteries")))
+    fields, _body = parse_header(reply)
+
+    assert fields["pv"] == str(INSTRUCTION_VERSION)
+
+
+@pytest.mark.parametrize("module_name", ("agents.gcp.server", "agents.azure.server"))
+def test_the_two_clouds_that_stamp_inline_use_the_shared_version(module_name):
+    """ADK and Agent Framework offer no responder seam, so these two write the
+    header themselves. They must read the same constant rather than a literal
+    that can drift from it."""
+    source = inspect.getsource(_cloud_module(module_name))
+
+    assert "INSTRUCTION_VERSION" in source

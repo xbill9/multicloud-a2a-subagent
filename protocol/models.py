@@ -87,6 +87,14 @@ class Draft(BaseModel):
     #: number that can distinguish a cited draft from a fabricated one, since
     #: the rubric's `evidence` dimension counts citation *shapes* and cannot.
     searches: int = -1
+    #: Which version of the agents' shared INSTRUCTION produced this draft, or
+    #: -1 if the agent did not say. The prompt is the experiment's independent
+    #: variable: change it and every subsequent draft answers a different
+    #: question, so runs either side are not comparable. `RUBRIC_VERSION` has
+    #: guarded the scoring end of this since the rubric was written; this is the
+    #: prompt end, added when the instruction changed on 2026-08-14 to require
+    #: searching.
+    prompt_version: int = -1
 
     @property
     def word_count(self) -> int:

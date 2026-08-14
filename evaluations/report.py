@@ -97,6 +97,11 @@ class Audit:
     #: the rubric and a model do not share a scale.
     judges: dict[str, int] = field(default_factory=dict)
     rubric_versions: dict[int, int] = field(default_factory=dict)
+    #: Which version of the agents' shared instruction produced the drafts.
+    #: More than one entry means these rows mix drafts written to different
+    #: briefs -- which is a change in the prompt reported as a change in the
+    #: models.
+    prompt_versions: dict[int, int] = field(default_factory=dict)
     narrow_wins: int = 0
 
     @property
@@ -106,6 +111,10 @@ class Audit:
     @property
     def mixed_rubrics(self) -> bool:
         return len(self.rubric_versions) > 1
+
+    @property
+    def mixed_prompts(self) -> bool:
+        return len(self.prompt_versions) > 1
 
 
 def aggregate(runs: list[tuple], *, narrow_margin: float = 1.0) -> Audit:
@@ -141,6 +150,9 @@ def aggregate(runs: list[tuple], *, narrow_margin: float = 1.0) -> Audit:
             row.runs += 1
             row.latencies.append(draft.latency_ms)
             row.rounds.append(draft.round)
+            audit.prompt_versions[draft.prompt_version] = (
+                audit.prompt_versions.get(draft.prompt_version, 0) + 1
+            )
 
             verdict = by_source.get(draft.source)
             if verdict is not None:
@@ -250,6 +262,14 @@ def _caveats(audit: Audit, min_runs: int) -> list[str]:
         notes.append(
             f"  - WARNING: these runs were scored by more than one judge ({detail}). "
             f"The rubric and a model do not share a scale, so these rows are not comparable"
+        )
+    if audit.mixed_prompts:
+        detail = ", ".join(f"v{v}={c}" for v, c in sorted(audit.prompt_versions.items()))
+        notes.append(
+            f"  - WARNING: these drafts were written to more than one instruction "
+            f"({detail}). Version 2 requires the agents to search before writing; "
+            f"version 1 said nothing about it. Rows spanning both report a change "
+            f"in the prompt as a change in the models"
         )
     if audit.mixed_rubrics:
         detail = ", ".join(f"v{v}={c}" for v, c in sorted(audit.rubric_versions.items()))

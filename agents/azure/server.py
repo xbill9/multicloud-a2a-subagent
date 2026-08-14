@@ -22,6 +22,7 @@ from agents.common import (
     AGENT_NAME,
     DESCRIPTION,
     INSTRUCTION,
+    INSTRUCTION_VERSION,
     direct_reply,
     model_mode,
     public_url,
@@ -142,6 +143,7 @@ class _StampedAgent:
                             model=model_id(),
                             brain=model_mode(),
                             searches=search_count() - before,
+                            prompt_version=INSTRUCTION_VERSION,
                         )
                     ],
                 )

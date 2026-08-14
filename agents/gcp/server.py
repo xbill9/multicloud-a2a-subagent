@@ -25,6 +25,7 @@ from agents.common import (
     AGENT_NAME,
     DESCRIPTION,
     INSTRUCTION,
+    INSTRUCTION_VERSION,
     degrade,
     direct_reply,
     model_mode,
@@ -166,6 +167,7 @@ def _stamped(inner):
                                 model=model_id(),
                                 brain=model_mode(),
                                 searches=search_count() - before,
+                                prompt_version=INSTRUCTION_VERSION,
                             )
                         )
                     ],
