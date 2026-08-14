@@ -83,8 +83,23 @@ run 20260813T213645-781a13   elapsed 114.3s   3/3 clouds   0 failures
 ```
 
 Gemini's first draft scored 13.8, was sent back with a critique naming its
-weakest dimensions, and returned at 21.1 -- which changed the winner. That is
-the loop doing the one thing a single-shot ranking cannot.
+weakest dimensions, and returned at 21.1, which changed the winner.
+
+**That reading is now qualified, and the qualification matters more than the
+result.** Draft versions were not stored on 2026-08-13, so what round 1 of that
+run actually contained cannot be recovered. Of the three later rewrites that
+*can* be inspected, **two began from a 31-word Vertex 429 error that had been
+scored as a draft** -- 7.97 of 25 -- and "improved" to 23 simply by being
+retried once quota returned. That is the loop recovering from a failure, not
+improving a draft.
+
+One case looks genuine: 100 words and no sources at 12.67, rewritten to 489
+words with eleven URLs at 24.0. One case is not evidence.
+
+So the honest claim is narrower than the one this page carried: **the loop is
+demonstrated to retry a failed leg; it is not yet demonstrated to improve a
+draft that was merely weak.** The provider-error guard added on 2026-08-14
+removes the cause, but every loop observation before it is suspect.
 
 | | built | tested | run locally | deployed | measured |
 |---|---|---|---|---|---|
