@@ -718,3 +718,74 @@ def test_the_page_draws_the_topology_from_events():
     assert "getPointAtLength" in PAGE
     # And it reads the structured field rather than the sentence.
     assert "e.revising" in PAGE
+
+
+# --------------------------------------------------------------------------
+# Public mode
+# --------------------------------------------------------------------------
+
+
+def test_a_private_master_does_not_limit_itself(client, monkeypatch):
+    """Its caller has already proved who they are; a limiter would only be in
+    the way."""
+    monkeypatch.setattr(service, "PUBLIC", False)
+    monkeypatch.setattr(service, "MAX_RUNS_PER_HOUR", 1)
+    service._recent_runs.clear()
+
+    assert client.post("/api/research", json=brief()).status_code == 200
+    assert client.post("/api/research", json=brief()).status_code == 200
+
+
+def test_a_public_master_refuses_past_its_hourly_limit(client, monkeypatch):
+    """Open to the internet, `POST /api/research` fans out to three clouds and
+    spends real money at three vendors. Without a limit the demo is a bill with
+    a URL."""
+    monkeypatch.setattr(service, "PUBLIC", True)
+    monkeypatch.setattr(service, "MAX_RUNS_PER_HOUR", 1)
+    service._recent_runs.clear()
+
+    assert client.post("/api/research", json=brief()).status_code == 200
+    refused = client.post("/api/research", json=brief())
+
+    # 429 rather than 503: the mesh is fine, this master is declining.
+    assert refused.status_code == 429
+    assert "limit" in refused.json()["error"]
+
+
+def test_the_read_only_views_are_never_limited(client, monkeypatch):
+    """Watching is the whole point of making it public, and it costs nothing."""
+    monkeypatch.setattr(service, "PUBLIC", True)
+    monkeypatch.setattr(service, "MAX_RUNS_PER_HOUR", 0)
+    service._recent_runs.clear()
+    client.post("/api/research", json=brief())  # refused, and that is fine
+
+    monkeypatch.setattr(service, "MAX_RUNS_PER_HOUR", 30)
+    for _ in range(3):
+        assert client.get("/api/ping").status_code == 200
+        assert client.get("/api/health").status_code == 200
+
+
+def test_health_says_whether_this_master_is_public(client, monkeypatch):
+    """Not a question anyone should answer by trying it from a logged-out
+    browser."""
+    monkeypatch.setattr(service, "PUBLIC", True)
+    payload = client.get("/api/health").json()
+
+    assert payload["public"] is True
+    assert payload["limits"]["max_runs_per_hour"] == service.MAX_RUNS_PER_HOUR
+
+
+def test_an_in_flight_run_is_released_even_when_it_fails(client, monkeypatch):
+    """A leaked counter would wedge a public master shut until it restarted."""
+    monkeypatch.setattr(service, "PUBLIC", True)
+    service._recent_runs.clear()
+
+    class Exploding:
+        async def run(self, request):
+            raise RuntimeError("the mesh fell over")
+
+    monkeypatch.setattr(service, "build_mesh", lambda *a, **k: Exploding())
+    with pytest.raises(RuntimeError):
+        client.post("/api/research", json=brief())
+
+    assert service._in_flight == 0

@@ -246,9 +246,16 @@ build() {
   # "unauthenticated but nobody knows the URL" is not an access control. Use
   # `open` to reach it. PUBLIC=1 overrides, deliberately loudly.
   local ingress="--no-allow-unauthenticated"
+  local public_env="RESEARCH_PUBLIC=0"
   if [[ "${PUBLIC:-}" == "1" ]]; then
     ingress="--allow-unauthenticated"
+    public_env="RESEARCH_PUBLIC=1"
     echo "WARNING: PUBLIC=1 -- deploying the front end open to the internet." >&2
+    echo "         Anyone can POST /api/research, which spends money at three" >&2
+    echo "         vendors per run. The service limits itself to" >&2
+    echo "         RESEARCH_MAX_CONCURRENT_RUNS=${RESEARCH_MAX_CONCURRENT_RUNS:-2} and" >&2
+    echo "         RESEARCH_MAX_RUNS_PER_HOUR=${RESEARCH_MAX_RUNS_PER_HOUR:-30}." >&2
+    echo "         The researcher agents stay private either way." >&2
   fi
 
   gcloud run deploy "$MASTER" \
@@ -257,7 +264,7 @@ build() {
     --service-account "$COORDINATOR_SA" \
     "$ingress" \
     --timeout "$MASTER_TIMEOUT" \
-    --set-env-vars "RESEARCH_COORDINATOR_CLOUD=gcp,RESEARCH_CLOUD=gcp,OTEL_TRACES_EXPORTER=${OTEL_TRACES_EXPORTER},RESEARCH_JUDGE_MODE=${JUDGE_MODE},RESEARCH_TIMEOUT_SECONDS=${RESEARCH_TIMEOUT_SECONDS},RESEARCH_EVAL_STORE=${EVAL_MOUNT}/runs.jsonl,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
+    --set-env-vars "${public_env},RESEARCH_MAX_CONCURRENT_RUNS=${RESEARCH_MAX_CONCURRENT_RUNS:-2},RESEARCH_MAX_RUNS_PER_HOUR=${RESEARCH_MAX_RUNS_PER_HOUR:-30},RESEARCH_COORDINATOR_CLOUD=gcp,RESEARCH_CLOUD=gcp,OTEL_TRACES_EXPORTER=${OTEL_TRACES_EXPORTER},RESEARCH_JUDGE_MODE=${JUDGE_MODE},RESEARCH_TIMEOUT_SECONDS=${RESEARCH_TIMEOUT_SECONDS},RESEARCH_EVAL_STORE=${EVAL_MOUNT}/runs.jsonl,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROJECT},GOOGLE_CLOUD_LOCATION=${REGION}" \
     --add-volume "name=eval,type=cloud-storage,bucket=${EVAL_BUCKET}" \
     --add-volume-mount "volume=eval,mount-path=${EVAL_MOUNT}" \
     --min-instances 0 --max-instances 1 \
@@ -649,7 +656,14 @@ verify() {
   # all three clouds and it is the only surface a human is meant to open, which
   # is exactly the combination that gets something made public "just to try
   # it". A 200 here means PUBLIC=1 is deployed.
-  echo "   master front end      -> $(curl -s -o /dev/null -w '%{http_code}' -m 25 "$(master_url)/")   (expect 403)"
+  if [[ "${PUBLIC:-}" == "1" ]]; then
+    echo "   master front end      -> $(curl -s -o /dev/null -w '%{http_code}' -m 25 "$(master_url)/")   (expect 200: PUBLIC=1)"
+    echo "     the front end is deliberately open. The researchers below are not,"
+    echo "     and that is the line that matters: a public page that can still"
+    echo "     only reach its peers with a federated credential."
+  else
+    echo "   master front end      -> $(curl -s -o /dev/null -w '%{http_code}' -m 25 "$(master_url)/")   (expect 403)"
+  fi
   echo
   echo "2. positive controls -- each leg alone, credentials as deployed."
   echo "   These come first: a denial only means something once you know the"

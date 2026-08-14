@@ -43,6 +43,8 @@ import asyncio
 import json
 import logging
 import os
+from collections import deque
+from time import monotonic
 from urllib.parse import urlsplit
 
 from pydantic import ValidationError
@@ -90,6 +92,56 @@ log = logging.getLogger("master")
 setup_telemetry("research-master")
 
 DEFAULT_TIMEOUT = default_timeout_seconds()
+
+#: Whether this master is served open to the internet. Set by `PUBLIC=1` on the
+#: deploy, and reported on /health rather than inferred: "is this thing public"
+#: is not a question anyone should have to answer by trying it from a logged-out
+#: browser.
+PUBLIC = os.getenv("RESEARCH_PUBLIC", "").strip() == "1"
+
+#: Limits on the one expensive endpoint, enforced only when public.
+#:
+#: A private master's caller has already proved who they are and a limiter would
+#: only get in their way. An open one is a different object: `POST
+#: /api/research` fans out to three clouds, spends real money at three vendors
+#: and holds a container for 30 to 120 seconds, so without these the demo is a
+#: bill with a URL. Read-only views stay unlimited -- watching is the whole
+#: point of making it public, and it costs nothing.
+MAX_CONCURRENT_RUNS = int(os.getenv("RESEARCH_MAX_CONCURRENT_RUNS", "2"))
+MAX_RUNS_PER_HOUR = int(os.getenv("RESEARCH_MAX_RUNS_PER_HOUR", "30"))
+
+_in_flight = 0
+_recent_runs: deque[float] = deque()
+
+
+def _admit() -> str:
+    """Decide whether to run one brief. Returns "" to admit, or the reason not to.
+
+    Deliberately per instance and per process rather than shared: the deploy
+    pins this service to one instance, so a counter here is the whole picture,
+    and a distributed limiter would be a database dependency bought to protect a
+    demonstrator.
+    """
+    if not PUBLIC:
+        return ""
+
+    now = monotonic()
+    while _recent_runs and now - _recent_runs[0] > 3600:
+        _recent_runs.popleft()
+
+    if _in_flight >= MAX_CONCURRENT_RUNS:
+        return (
+            f"{_in_flight} run(s) already in flight and this master allows "
+            f"{MAX_CONCURRENT_RUNS}. A run takes 30-120s; watch the live view "
+            f"and try again when it finishes."
+        )
+    if len(_recent_runs) >= MAX_RUNS_PER_HOUR:
+        return (
+            f"{len(_recent_runs)} runs in the last hour, which is this public "
+            f"demo's limit. Every run spends real money at three vendors. The "
+            f"recorded runs are all readable without one."
+        )
+    return ""
 
 #: Serialises appends to the evaluation store. The store is one file appended
 #: to by every run, and on Cloud Run it is a GCS volume where a write is a
@@ -148,6 +200,17 @@ async def health(request):
             "timeout_seconds": DEFAULT_TIMEOUT,
             "store": str(store_path()),
             "telemetry": telemetry_summary(),
+            "public": PUBLIC,
+            "limits": (
+                {
+                    "max_concurrent_runs": MAX_CONCURRENT_RUNS,
+                    "max_runs_per_hour": MAX_RUNS_PER_HOUR,
+                    "in_flight": _in_flight,
+                    "runs_this_hour": len(_recent_runs),
+                }
+                if PUBLIC
+                else {}
+            ),
             "peers": peers,
         }
     )
@@ -184,6 +247,11 @@ async def research(request):
             status_code=400,
         )
 
+    refused = _admit()
+    if refused:
+        # 429 rather than 503: the mesh is fine, this master is declining.
+        return JSONResponse({"error": refused}, status_code=429)
+
     clouds = payload.get("clouds") or None
     try:
         mesh = build_mesh(clouds, client=client, judge=judge, timeout_seconds=DEFAULT_TIMEOUT)
@@ -196,7 +264,13 @@ async def research(request):
         log.exception("could not assemble the mesh")
         return JSONResponse({"error": f"mesh unavailable: {exc}"}, status_code=503)
 
-    run = await mesh.run(brief)
+    global _in_flight
+    _in_flight += 1
+    _recent_runs.append(monotonic())
+    try:
+        run = await mesh.run(brief)
+    finally:
+        _in_flight -= 1
 
     # The whole timeline into the service log, every run, before the store is
     # touched. Two reasons, both learned here rather than assumed: the store is
