@@ -134,6 +134,40 @@ PAGE = """<!doctype html>
   .tabs button.on { background: var(--line); color: var(--text); }
   .peers { font: 12px ui-monospace, monospace; color: var(--dim); }
   .peers b { color: var(--text); font-weight: 500; }
+
+  /* the debug views */
+  .flownav { display: flex; gap: 8px; align-items: center; margin-bottom: 12px;
+             flex-wrap: wrap; }
+  .lane { border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+          margin-bottom: 10px; }
+  .lane h4 { margin: 0 0 8px; display: flex; gap: 10px; align-items: center;
+             font-size: 14px; }
+  .rounds { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rbox { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+          min-width: 92px; }
+  .rbox .n { color: var(--dim); font-size: 11px; text-transform: uppercase;
+             letter-spacing: .06em; }
+  .rbox .v { font-size: 18px; font-weight: 600; }
+  .rbox.up { border-color: #2f8f4e; }
+  .rbox.same { opacity: .6; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px;
+         overflow: hidden; margin-top: 3px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .dims { display: grid; grid-template-columns: 96px 1fr 42px; gap: 4px 10px;
+          align-items: center; font-size: 12px; margin-top: 8px; }
+  .crit { border-left: 3px solid var(--accent); padding: 6px 10px;
+          margin-top: 8px; white-space: pre-wrap; font-family: var(--mono);
+          font-size: 12px; color: var(--dim); }
+  .wire { width: 100%; border-collapse: collapse; font-family: var(--mono);
+          font-size: 12px; }
+  .wire th { text-align: left; color: var(--dim); font-weight: 500;
+             border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  .wire td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  .wire tr.bad td { color: #d05a5a; }
+  .rid { color: var(--dim); font-size: 11px; }
+  .phase { display: inline-block; width: 18px; height: 18px; line-height: 18px;
+           text-align: center; border-radius: 4px; background: var(--line);
+           font-size: 11px; }
 </style>
 </head>
 <body>
@@ -146,6 +180,9 @@ PAGE = """<!doctype html>
   <div class="tabs">
     <button class="on" data-tab="run">run a brief</button>
     <button data-tab="last">last run</button>
+    <button data-tab="flow">flow</button>
+    <button data-tab="reviews">reviews</button>
+    <button data-tab="wire">wire</button>
     <button data-tab="audit">audit</button>
   </div>
 
@@ -199,6 +236,28 @@ PAGE = """<!doctype html>
        rendered exactly as it was live. This is the shareable one: it survives
        the instance that produced it.</p>
     <div id="last"></div>
+  </section>
+
+  <section id="tab-flow" hidden>
+    <p class="sub">What happened, to whom, and when. One lane per cloud, one
+       column per round. Read left to right: a lane that gained a column was
+       sent back by the judge.</p>
+    <div id="flowNav" class="flownav"></div>
+    <div id="flow">loading&hellip;</div>
+  </section>
+
+  <section id="tab-reviews" hidden>
+    <p class="sub">Every round's verdict, per dimension, and the critique each
+       cloud was actually sent. The critique is rebuilt with the same function
+       the mesh called, not a second implementation in this page.</p>
+    <div id="reviews">loading&hellip;</div>
+  </section>
+
+  <section id="tab-wire" hidden>
+    <p class="sub">Every HTTP round trip the coordinator made, in wall-clock
+       order, with the provider's own request id where it sent one. This is the
+       only column here that someone outside this process can check.</p>
+    <div id="wire">loading&hellip;</div>
   </section>
 
   <section id="tab-audit" hidden>
@@ -454,13 +513,186 @@ function renderComparison(run) {
   </div>`;
 }
 
+
+// --------------------------------------------------------------------------
+// The debug views: flow, reviews, wire
+// --------------------------------------------------------------------------
+//
+// All three read one payload from api/flow, which is shaped on the server. The
+// critique in particular is rebuilt there with the same function the mesh
+// called when it sent a draft back -- a second implementation here would drift
+// and the drift would be invisible, because a plausible-looking critique that
+// no agent ever received renders exactly like a real one.
+
+let flowIndex = 1;
+let flowData = null;
+
+const fmtMs = (ms) => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : Math.round(ms) + 'ms';
+const PHASE = {credential: 'K', discovery: 'D', invoke: 'I'};
+
+async function loadFlow() {
+  const targets = ['flow', 'reviews', 'wire'];
+  try {
+    const res = await fetch('api/flow?n=' + flowIndex);
+    if (res.status === 404) {
+      targets.forEach(id => $(id).innerHTML =
+        `<div class="panel"><p class="meta" style="margin:0">Nothing recorded
+         yet. Send a brief.</p></div>`);
+      $('flowNav').innerHTML = '';
+      return;
+    }
+    flowData = await res.json();
+  } catch (e) {
+    targets.forEach(id => $(id).textContent = String(e));
+    return;
+  }
+  renderFlowNav();
+  renderFlow();
+  renderReviews();
+  renderWire();
+}
+
+function renderFlowNav() {
+  const d = flowData;
+  const total = d.total_runs || 1;
+  $('flowNav').innerHTML = `
+    <button id="fPrev" ${flowIndex >= total ? 'disabled' : ''}>&larr; older</button>
+    <button id="fNext" ${flowIndex <= 1 ? 'disabled' : ''}>newer &rarr;</button>
+    <span class="meta"><b>${esc(d.run_id)}</b> &middot; ${esc(d.started_at)}
+      &middot; ${fmtMs(d.elapsed_ms)} &middot; ${d.rounds} round(s)
+      &middot; run ${flowIndex} of ${total}</span>`;
+  $('fPrev').onclick = () => { flowIndex++; loadFlow(); };
+  $('fNext').onclick = () => { flowIndex = Math.max(1, flowIndex - 1); loadFlow(); };
+}
+
+// A run with no model in it is not a comparison, and the page says so above
+// the numbers rather than below them.
+function brainBanner(d) {
+  if (d.brains.includes('llm') && d.brains.length === 1) return '';
+  return `<div class="panel" style="border-color:var(--accent);margin-bottom:12px">
+    <p class="meta" style="margin:0"><b>Not a model comparison.</b>
+    brain: ${d.brains.map(esc).join(', ')}. A <code>direct</code> draft is
+    canned text, identical on every cloud, so any ranking over it is a latency
+    tie-break.</p></div>`;
+}
+
+function renderFlow() {
+  const d = flowData;
+  const lanes = d.lanes.map(lane => {
+    const dr = lane.draft;
+    const boxes = lane.scores.map((s, i) => {
+      const prev = i > 0 ? lane.scores[i - 1] : null;
+      const cls = s === null ? 'same' : (prev !== null && s > prev ? 'up' : (prev === null ? '' : 'same'));
+      const pct = s === null ? 0 : (100 * s / d.max_total);
+      return `<div class="rbox ${cls}">
+        <div class="n">round ${i + 1}</div>
+        <div class="v">${s === null ? '&mdash;' : s.toFixed(1)}</div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+      </div>`;
+    }).join('');
+
+    const searches = dr
+      ? (dr.searches < 0 ? 'not reported' : `${dr.searches} search${dr.searches === 1 ? '' : 'es'}`)
+      : '';
+    const meta = dr
+      ? `<span class="peers">${esc(dr.model)} &middot; ${dr.words}w &middot;
+         ${fmtMs(dr.latency_ms)} &middot; ${searches}</span>`
+      : `<span class="peers" style="color:#d05a5a">${esc(lane.failure || 'no draft')}</span>`;
+
+    return `<div class="lane">
+      <h4><span class="tag ${esc(lane.source)}">${esc(lane.source)}</span>
+        <span class="peers"><b>${esc(lane.auth)}</b></span>
+        ${lane.source === d.winner ? '<span class="peers">&#9733; winner</span>' : ''}
+        ${meta}</h4>
+      <div class="rounds">${boxes}</div>
+    </div>`;
+  }).join('');
+
+  $('flow').innerHTML = brainBanner(d) + `
+    <div class="panel">
+      <p class="meta" style="margin:0 0 4px"><b>${esc(d.topic)}</b></p>
+      <p class="meta" style="margin:0">judge ${esc(d.judge)} &middot;
+         winner ${esc(d.winner || 'none')} &middot;
+         ${d.complete ? 'every cloud answered' : 'incomplete'}</p>
+    </div>` + lanes;
+}
+
+function renderReviews() {
+  const d = flowData;
+  $('reviews').innerHTML = brainBanner(d) + d.reviews.map(r => {
+    const entries = r.entries.map(e => {
+      const dims = e.scores.map(s => `
+        <span class="peers">${esc(s.dimension)}</span>
+        <span class="bar"><i style="width:${100 * s.score / 5}%"></i></span>
+        <span class="peers">${s.score.toFixed(1)}</span>`).join('');
+      const crit = e.critique_sent
+        ? `<div class="crit"><b>sent back with:</b>\n${esc(e.critique)}</div>`
+        : (e.below_pass_mark
+            ? `<div class="crit">below the pass mark, but this was the final
+               round &mdash; nothing was sent back.</div>`
+            : '');
+      return `<div class="lane">
+        <h4><span class="tag ${esc(e.source)}">${esc(e.source)}</span>
+          <span class="v">${e.total.toFixed(1)}</span>
+          <span class="peers">of ${e.max}</span>
+          ${e.below_pass_mark ? '<span class="peers">below the bar</span>' : ''}</h4>
+        <div class="dims">${dims}</div>
+        ${e.notes ? `<p class="meta">${esc(e.notes)}</p>` : ''}
+        ${crit}</div>`;
+    }).join('');
+    return `<div class="panel" style="margin-bottom:14px">
+      <p class="meta" style="margin:0 0 8px"><b>round ${r.round}</b> &middot;
+        judge ${esc(r.judge)} &middot; ${r.blind ? 'blind' : 'NOT BLIND'} &middot;
+        winner ${esc(r.winner || 'none')} &middot; ${fmtMs(r.elapsed_ms)}</p>
+      ${r.warnings.map(w => `<p class="meta" style="color:var(--accent)">${esc(w)}</p>`).join('')}
+      ${entries}
+      ${r.rationale ? `<p class="meta">${esc(r.rationale)}</p>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderWire() {
+  const d = flowData;
+  const rows = [];
+  d.lanes.forEach(lane => lane.calls.forEach(c => rows.push({lane: lane.source, ...c})));
+  rows.sort((a, b) => a.offset_ms - b.offset_ms);
+
+  if (!rows.length) {
+    $('wire').innerHTML = `<div class="panel"><p class="meta" style="margin:0">
+      No HTTP calls were made &mdash; every participant answered in process.
+      There is nothing to prove here and this says so rather than drawing an
+      empty grid.</p></div>`;
+    return;
+  }
+
+  $('wire').innerHTML = `<div class="panel"><table class="wire">
+    <thead><tr><th>at</th><th>leg</th><th></th><th>host</th><th>code</th>
+      <th>took</th><th>back</th></tr></thead>
+    <tbody>${rows.map(c => `
+      <tr class="${c.ok ? '' : 'bad'}">
+        <td>+${Math.round(c.offset_ms)}ms</td>
+        <td><span class="tag ${esc(c.lane)}">${esc(c.lane)}</span></td>
+        <td><span class="phase">${PHASE[c.phase] || '?'}</span></td>
+        <td>${esc(c.host)}${esc(c.path)}
+          ${c.request_id ? `<div class="rid">id ${esc(c.request_id)}</div>` : ''}
+          ${!c.ok && c.detail ? `<div class="rid">${esc(c.detail)}</div>` : ''}</td>
+        <td>${c.status === null ? '-' : c.status}</td>
+        <td>${fmtMs(c.elapsed_ms)}</td>
+        <td>${c.bytes === null ? '-' : c.bytes + 'B'}</td>
+      </tr>`).join('')}</tbody></table>
+    <p class="meta" style="margin:10px 0 0">K credential &middot; D agent-card
+      discovery &middot; I A2A invocation. Ids are the provider's own.</p>
+  </div>`;
+}
+
 document.querySelectorAll('.tabs button').forEach(btn => {
   btn.onclick = async () => {
     document.querySelectorAll('.tabs button').forEach(b =>
       b.classList.toggle('on', b === btn));
-    ['run', 'last', 'audit'].forEach(tab => {
+    ['run', 'last', 'flow', 'reviews', 'wire', 'audit'].forEach(tab => {
       $('tab-' + tab).hidden = btn.dataset.tab !== tab;
     });
+    if (['flow', 'reviews', 'wire'].includes(btn.dataset.tab)) { await loadFlow(); }
     if (btn.dataset.tab === 'audit') {
       try { $('audit').textContent = await (await fetch('api/audit')).text(); }
       catch (e) { $('audit').textContent = String(e); }

@@ -440,3 +440,95 @@ def test_no_drafts_has_an_exit_code_only_the_cli_can_emit():
 
     assert NO_DRAFTS_EXIT == 3
     assert NO_DRAFTS_EXIT not in (0, 1, 2, 126, 127)
+
+
+# --------------------------------------------------------------------------
+# The debug view
+# --------------------------------------------------------------------------
+
+
+def test_flow_is_404_until_something_is_recorded(client):
+    assert client.get("/api/flow").status_code == 404
+
+
+def test_flow_shapes_a_run_for_the_view(client):
+    client.post("/api/research", json=brief())
+    payload = client.get("/api/flow").json()
+
+    assert payload["run_id"]
+    assert payload["participants"]
+    assert payload["dimensions"]
+    assert payload["max_total"] == 25.0
+    assert {lane["source"] for lane in payload["lanes"]} == set(payload["participants"])
+    assert payload["reviews"], "a judged run has at least one review"
+
+
+def test_every_lane_reports_its_auth_mode(client):
+    """The page shows it beside the cloud, so it has to come from the run
+    rather than from the master's own configuration -- a leg that fell back is
+    the case worth seeing."""
+    client.post("/api/research", json=brief())
+    for lane in client.get("/api/flow").json()["lanes"]:
+        assert "auth" in lane
+
+
+def test_the_critique_shown_is_the_one_the_mesh_would_send(client):
+    """Not a second implementation in the page.
+
+    The view rebuilds it with `judge.critique_for`, the same function the mesh
+    calls when it sends a draft back. A reimplementation in JavaScript would
+    drift, and the drift would be invisible: a plausible critique that no agent
+    ever received renders exactly like a real one.
+    """
+    import asyncio
+
+    from coordinator.flow import build_flow
+    from coordinator.judge import RubricJudge, critique_for
+    from coordinator.mesh import ResearchMesh
+    from coordinator.models import ResearchRequest
+    from coordinator.participants import Participant
+    from tests.test_mesh import STRONG, WEAK, Improving
+
+    source = Improving("aws", [WEAK, STRONG])
+    mesh = ResearchMesh(
+        [Participant(name="aws", source=source, cloud="aws")], max_rounds=3, judge=RubricJudge()
+    )
+    run = asyncio.run(mesh.run(ResearchRequest(topic="agent-to-agent protocols", max_words=300)))
+
+    view = build_flow(run)
+    first_round = view["reviews"][0]["entries"][0]
+    assert first_round["critique_sent"] is True
+    assert first_round["critique"] == critique_for(run.rounds[0].verdicts[0])
+    # And it is the text the agent actually got.
+    assert source.revisions[0].critique == first_round["critique"]
+
+
+def test_a_final_round_failure_is_not_shown_as_a_critique_that_was_sent(client):
+    """"Below the bar on the last round" and "sent back" are different facts.
+    Rendering the first as the second invents a message."""
+    import asyncio
+
+    from coordinator.flow import build_flow
+    from coordinator.mesh import ResearchMesh
+    from coordinator.models import ResearchRequest
+    from coordinator.participants import Participant
+    from tests.test_mesh import WEAK, Improving
+
+    run = asyncio.run(
+        ResearchMesh(
+            [Participant(name="aws", source=Improving("aws", [WEAK]), cloud="aws")],
+            max_rounds=1,
+        ).run(ResearchRequest(topic="agent-to-agent protocols", max_words=300))
+    )
+
+    entry = build_flow(run)["reviews"][-1]["entries"][0]
+    assert entry["below_pass_mark"] is True
+    assert entry["critique_sent"] is False
+    assert entry["critique"] == ""
+
+
+def test_the_page_serves_the_debug_tabs(client):
+    body = client.get("/").text
+    for tab in ("flow", "reviews", "wire"):
+        assert f'data-tab="{tab}"' in body
+        assert f'id="tab-{tab}"' in body

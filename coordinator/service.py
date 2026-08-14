@@ -52,6 +52,7 @@ from starlette.routing import Route
 
 from clients import CLIENT_STACKS
 from coordinator.errors import AdapterError
+from coordinator.flow import build_flow
 from coordinator.frontend import PAGE
 from coordinator.judge import JUDGE_MODES, judge_mode, load_judge
 from coordinator.mesh import ResearchMesh
@@ -257,6 +258,32 @@ async def timeline(request):
     return PlainTextResponse(render_timeline(runs[-index][1]))
 
 
+async def flow(request):
+    """One run, shaped for the debug view. `?n=2` walks back through the store.
+
+    Shaped on the server rather than in the page, and the reason is narrow: the
+    critique shown against each draft is rebuilt with the same
+    `judge.critique_for` the mesh called when it sent that draft back. A second
+    implementation in the browser would drift, and the drift would be invisible
+    -- the page would show a plausible critique no agent ever received.
+    """
+    try:
+        runs = list(load_runs())
+    except OSError as exc:
+        return JSONResponse({"error": f"evaluation store unreadable: {exc}"}, status_code=503)
+    if not runs:
+        return JSONResponse({"error": "no run has been recorded yet"}, status_code=404)
+
+    try:
+        index = max(1, int(request.query_params.get("n", "1")))
+    except ValueError:
+        return JSONResponse({"error": "n must be a positive integer"}, status_code=400)
+    if index > len(runs):
+        return JSONResponse({"error": f"only {len(runs)} run(s) recorded"}, status_code=404)
+
+    return JSONResponse({"total_runs": len(runs), **build_flow(runs[-index][1])})
+
+
 async def audit(request):
     try:
         text = render_audit(aggregate(list(load_runs())))
@@ -273,6 +300,7 @@ app = Starlette(
         Route("/api/research", research, methods=["POST"]),
         Route("/api/last", last_run),
         Route("/api/timeline", timeline),
+        Route("/api/flow", flow),
         Route("/api/audit", audit),
     ]
 )
