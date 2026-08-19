@@ -2,7 +2,7 @@
 title: "Three Clouds, One Brief: What Actually Differs Between ADK, Strands and Agent Framework"
 published: false
 description: The same research agent built three times — Google ADK on Cloud Run, Strands on Bedrock AgentCore, Agent Framework on Container Apps — all speaking A2A v1.0. Where the platforms differ, where the models differ, and what has to be held constant before either is readable.
-tags: ai, architecture, cloud, python
+tags: a2a, aiagents, aws, azure
 ---
 
 All three hyperscalers now ship an agent framework, and all three speak A2A. The
