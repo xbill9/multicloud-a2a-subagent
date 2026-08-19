@@ -128,7 +128,14 @@ def summarise(runs: list[ResearchRun]) -> dict:
         # The one-line reading. Stated rather than left to be inferred, because
         # the whole argument turns on it: a panel is justified when no member
         # dominates, and pointless when one does.
-        "rotates": (
+        #
+        # Named for what it tests. It was `rotates`, and the word claimed more
+        # than the arithmetic: a threshold on the top win rate cannot see an
+        # order, and the winner going 10/8/6 over 24 runs is chi-squared 1.00 on
+        # 2 df -- a coin, not a rotation. Unpredictable is the finding, and it is
+        # the stronger one, because a real rotation would mean you could route by
+        # topic and skip the panel.
+        "no_dominant_cloud": (
             max((row.win_rate or 0) for row in ordered) < 0.75 if ordered else None
         ),
     }
@@ -159,11 +166,12 @@ def render(summary: dict) -> str:
         )
 
     lines += ["", "notes:"]
-    if summary["rotates"]:
+    if summary["no_dominant_cloud"]:
         lines.append(
-            "  - the best draft rotates between clouds, which is what justifies "
-            "a panel at all. Were one cloud winning nearly every brief, the "
-            "honest recommendation would be to use that cloud."
+            "  - no cloud owns the winner, so which one writes the best draft is "
+            "not predictable in advance. That is what justifies a panel at all. "
+            "Were one cloud winning nearly every brief, the honest "
+            "recommendation would be to use that cloud."
         )
     else:
         lines.append(

@@ -202,24 +202,41 @@ comparable.**
 
 Believe these — they are measured and deployed:
 
-- three native agents on three clouds, three federation modes, all with
-  **positive and negative controls** behind them, plus a wrong-audience probe
-- the judge loop gates and sends drafts back; measured lifting Gemini from 13.8
-  to 21.1, which changed the winner
+- three native agents on three clouds, three federation modes, each with a
+  **positive and a negative control** behind it as of 2026-08-13, plus a
+  wrong-audience probe on the GCP leg
+- the judge loop gates a draft and sends it back with a critique; the drafts
+  come back rewritten and the audit records both versions
 - traces are live: wire events reach the view before their leg finishes
 - OpenTelemetry to Cloud Trace on the master and the GCP researcher
 
 Do not believe these yet:
 
-- **The scores are not a model comparison.** One brief, one rubric, single runs.
-- **Two of three models ignore the search tool they are given.** On
-  2026-08-13 a draft scored 5.0/5 on `evidence` having made zero searches;
-  on 2026-08-14 AWS scored 19.0/25 with zero searches and zero citations.
-  Tool parity in *availability* is not parity in *use*, and the shared
-  `INSTRUCTION` never tells a researcher to search.
+- **The scores are not a model comparison.** 24 runs, all of them technology
+  surveys, spanning two changes to the instruction.
+- **"The loop lifted Gemini from 13.8 to 21.1 and changed the winner" is
+  retracted.** Draft versions were not stored on 2026-08-13, so round 1 of that
+  run cannot be inspected. Of the rewrites that can be, two began from a
+  provider error that had been scored as a draft. The loop is demonstrated to
+  retry a failed leg, not yet to improve a weak one.
+- **Search use tracks the prompt, and the corpus is more modest than the
+  headline.** Under `INSTRUCTION` v1 AWS made zero searches in 7 of 7 drafts;
+  under v2, 2 of 9; under v3, 1 of 7. Azure has one zero-search draft in 16.
+  The instruction now opens with ALWAYS SEARCH, so "the shared `INSTRUCTION`
+  never tells a researcher to search" is no longer true — but *never to
+  usually* is the claim, not never to always. Gemini spends the full six-search
+  budget in every v3 run, so the ceiling is binding on it.
 - **The rubric is uncalibrated.** Its weightings were chosen by argument.
   `agreement_rate` is the check and it stands at one review.
-- **The model judge has never judged.** Only its failure paths are tested.
+- **The two judges disagree.** `python -m evaluations.rejudge --judge llm` gives
+  Azure 87% of the wins and AWS none, where the rubric gives no cloud a
+  majority. The best-of-breed claim is a property of the scorer until a human
+  says which scorer is right.
+- **The model judge has judged the stored corpus, never a live run.** `rejudge`
+  loads the same `LlmJudge` the service would, offline. `JUDGE_MODE` defaults
+  to `rubric`, so it has never gated, critiqued or driven the loop.
+- **The controls have not been re-run since the agents were rebuilt for
+  `INSTRUCTION` v2 and v3.** They passed against an earlier image.
 - **Nobody has opened the page in a browser from a session that could report
   back on how it looks.** The script parses, every id exists, every field is
   produced — that is not the same as it looking right.

@@ -112,10 +112,10 @@ removes the cause, but every loop observation before it is suspect.
 | Cross-cloud federation — negative controls | yes | yes | n/a | **yes** | **see below** |
 | Three research agents, `direct` brain | yes | yes | yes | **yes** | yes |
 | Three research agents, `llm` brain | yes | yes | yes | **yes** | **yes, 2026-08-13** |
-| Web search, all three clouds | yes | yes | yes | **yes** | **yes, and barely used** |
+| Web search, all three clouds | yes | yes | yes | **yes** | **yes; use tracks the prompt, below** |
 | Judge — deterministic rubric | yes | yes | yes | **yes** | yes |
 | Judge — the loop (gate, critique, revise) | yes | yes | yes | **yes** | **yes, 2026-08-13** |
-| Judge — model | yes | failure paths only | **no** | **no** | **no** |
+| Judge — model | yes | yes, against a stub | **yes, 2026-08-14** | **no, deploys default to `rubric`** | **one corpus re-score** |
 | Audit / report | yes | yes | yes | **yes** | **one run** |
 
 ### The finding from the first model run
@@ -132,12 +132,41 @@ aws    searches=0   evidence 0.0
 points are citation-shaped text with nothing behind them -- the rubric counts
 the gesture, which was written down as a known weakness before search existed
 and is now a measured one. Tool parity in *availability* is not parity in
-*use*, and the shared `INSTRUCTION` never tells a researcher to search.
+*use*, and at the time the shared `INSTRUCTION` never told a researcher to
+search.
 
 Do not read the table above as a model comparison. It is one brief, one run,
 one rubric, and two of the three models did no retrieval at all.
 
-### The rotation claim did not survive a second scorer
+**That finding is dated, and the instruction has changed twice since.** It was
+taken under `INSTRUCTION` v1, which said nothing about searching. v2
+(2026-08-14) said search first and cite only what you opened — and Gemini read
+"one search for each specific figure" literally, spending 24 searches on a
+300-word brief, which is 25 model calls and enough to exhaust this project's
+Vertex quota on its own. v3, the same day, sets the same requirement against
+the six-search budget `protocol/search.py` now enforces, so the model plans
+against the bound instead of being cut off by it. `INSTRUCTION_VERSION` travels
+on every draft for the same reason `RUBRIC_VERSION` does: change the
+instruction and runs either side of it are answering different questions.
+
+Read against the 24-run corpus on 2026-08-14, the drafts that made zero
+searches were:
+
+| | zero-search drafts |
+|---|---|
+| aws, under v1 | 7 of 7 |
+| aws, under v2 | 2 of 9 |
+| aws, under v3 | 1 of 7 |
+| azure, all versions | 1 of 16 |
+| gcp, under v3 | none — it spends the whole six-search budget every run |
+
+So the correction is **never to *usually*, not never to always**, and the
+stronger-sounding version of it — "AWS now searches every run" — is not what
+the corpus says. Gemini sitting on the budget ceiling in every v3 run is its
+own open question: a model that always spends its last search would spend more
+if it had it, so the bound is now shaping the drafts being compared.
+
+### The rotation claim did not survive the arithmetic, or a second scorer
 
 Measured 2026-08-14 with `python -m evaluations.rejudge --judge llm`, which
 re-ranks the stored corpus without mutating it:
@@ -153,6 +182,19 @@ Under the deterministic rubric no cloud owns the winner and a panel is
 justified. **Under a model judge, Azure wins 87% of the briefs it answered and
 AWS wins none** -- and by this project's own rule that reads "one cloud wins
 nearly every brief; use that cloud."
+
+**"The winner rotates" was too strong even under the rubric.** The winner went
+10/8/6 across the 24 runs, which is chi-squared 1.00 on 2 degrees of freedom —
+indistinguishable from a coin. What the corpus supports is that the winner is
+*unpredictable*, and that is the better argument for a panel anyway: a
+systematic rotation would mean you could route by topic and skip the panel
+entirely.
+
+That test is itself generous, and in the direction that flatters the claim: it
+compares against an even 8/8/8, but GCP answered only 14 of the 24 briefs and
+cannot win one it did not answer. Read per brief answered the spread is wider
+than the raw counts make it look, which is one more reason the word to use is
+*unpredictable* and not *even*.
 
 So the honest statement is that **the best-of-breed claim is a property of the
 scorer, not yet of the clouds**, and it should not be made until a human says
@@ -342,22 +384,33 @@ Every agent runs one of two ways, set by `RESEARCH_MODEL_MODE`:
   three clouds, so the judge ranks three identical drafts and says so.
 - **`llm`** — the cloud's native model through its native framework: Gemini via
   ADK, Bedrock via Strands, a Foundry deployment via Agent Framework. Requires
-  that cloud's credentials. **Never run.**
+  that cloud's credentials. **Deployed and running on all three clouds since
+  2026-08-13**; every model-backed run in the audit came through it.
 
 `Draft.brain` travels with every draft, and `evaluations/report.py` excludes
 anything that is not `llm`. Averaging canned text into a model's score would
 manufacture a result out of scaffolding.
 
-## No tools, deliberately
+## Search, added to all three at once
 
-None of the three agents gives its model a tool. The currency agent needed one
-because a rate is a lookup; a research brief is the model's own output, and
+This section used to say *no tools, deliberately*, and the reasoning still
+holds even though the conclusion reversed. The currency agent needed a tool
+because a rate is a lookup; a research brief is the model's own output, so
 giving one cloud a search tool the others lack would make the audit a
-comparison of tool access rather than of models. There is a test asserting no
-`tools=` appears in any of the three builders.
+comparison of tool access rather than of models. What followed from that was a
+rule rather than a prohibition — **if search is added it has to be added to all
+three, and the audit's history has to be cut at that point** — and that is what
+was done.
 
-If search is added later it has to be added to all three, and the audit's
-history has to be cut at that point.
+All three agents now build a `web_search` tool from `protocol/search.py`, gated
+on `search_enabled()`, so the no-tool configuration is still reachable and is
+still what `direct` mode runs. The test that asserted no `tools=` appeared in
+any builder now asserts the opposite, per cloud: `tests/test_matrix.py` fails a
+cloud that gives its model no tool *while the others have search*. Parity is
+the invariant in both directions, and parity is the part a test can hold.
+
+Parity in availability is not parity in use, which is the finding above and the
+reason `Draft.searches` is recorded on every draft.
 
 ## The audit
 
@@ -373,9 +426,11 @@ aws/us.amazon.nova-micro-v1:0        12     2     2    17%    12.1     2260
 azure/gpt-5-mini                     12     3     2    25%    16.8     5980
 ```
 
-**That table is an illustration of the format, not a result.** No `llm` run has
-ever been recorded. Run it today against this repo's own store and it prints
-`no model-backed runs recorded`, which is the correct answer.
+**That table is an illustration of the format, and its numbers were invented.**
+It was written before any model had run here. The store now holds 24
+model-backed runs, but this block has never been regenerated against it — the
+real store is in GCS, not in the repo — so read it for the columns and read the
+panel table near the top of this page for numbers that were actually produced.
 
 The report withholds any row with fewer than five runs, counts narrow wins as
 ties, warns when runs were scored by more than one judge (the rubric and a
@@ -768,33 +823,60 @@ matrix axes apply unchanged.
 
 ## Not done
 
-- **No model has ever written a draft here, deployed or not.** Every number on
-  this page came from `direct`-brain agents returning canned text. `llm` mode
-  is built on all three clouds and has never answered a brief, so nothing here
-  compares Gemini, Bedrock and Foundry — it compares three transports.
+Every item here was checked against the code and the corpus on 2026-08-18. The
+four that used to head this list — no model has written a draft, `verify` has
+not been re-run, the model judge has never judged, `llm` mode has never run —
+were all true when written and all false by 2026-08-14. They sat here for four
+days contradicting the status section at the top of this same file, which is
+its own lesson: a list of open items decays exactly as fast as the work closes
+them, and nothing fails when it rots.
+
+- **The scores are still not a model comparison.** 24 runs is enough to compute
+  a rate and not enough to trust one, and all 24 are the same kind of question
+  — batteries, hydrogen, solar, reactors. Nothing here has been tried on a
+  brief that is not a technology survey. The instruction also changed twice
+  inside those 24 runs, so they are not one population.
+- **Which scorer is right is unresolved, and the best-of-breed claim waits on
+  it.** The rubric and the model judge disagree about whether any cloud
+  dominates (see above). Until a human says which is right, the panel argument
+  rests on availability, which is the one column no judge can move.
+- **The loop is not demonstrated to improve a merely weak draft.** It is
+  demonstrated to retry a failed leg. One of three inspectable rewrites looks
+  genuine; the other two started from a provider error that had been scored as
+  a draft. The guard that stops that landed 2026-08-14, so the evidence for
+  this has to be gathered again from runs after it.
+- **The controls have not been re-run since the agents were rebuilt for
+  `INSTRUCTION` v2 and v3.** They passed on 2026-08-13 and found the open Azure
+  ingress, which is the strongest thing this project has done — but their
+  subject has been redeployed since, and a control that passed against an
+  earlier image is a claim about that image.
+- **The wrong-audience probe covers GCP only.** AWS and Azure have a positive
+  control and a credential-removed control; neither has been offered a valid
+  token minted for the wrong audience, which is the probe that separates *this
+  identity is checked* from *some token is checked*.
+- **The model judge has judged the corpus, never a live run.** `rejudge` used
+  the same `LlmJudge` the service would load, offline, over stored drafts. It
+  has never been the in-run judge — `JUDGE_MODE` defaults to `rubric` in
+  `infra/deploy_gcp.sh` — so it has never driven the loop, and no critique it
+  wrote has ever been sent back to a researcher.
+- **The rubric is unvalidated.** Its weightings and thresholds — eight
+  specifics per hundred words for full marks, five citation markers, the
+  asymmetric length penalty — were chosen by argument, not calibration.
+  `agreement_rate` is the check that would settle it and it stands at one
+  review.
+- **The search budget is now shaping the drafts.** Gemini spends all six
+  searches in every v3 run, so the ceiling is binding on at least one
+  participant and the comparison is partly a comparison of who hits it.
 - **Nobody has opened the front end in a browser.** It is served by a deployed
   service, its script parses, and every field it reads is asserted in
   `tests/test_service.py`. That is not the same as it looking right.
-- **The deployed runs are single cold runs.** The 6700ms elapsed and every
-  per-leg figure is one sample with cold starts in it, not a measurement — the
-  winner changed between two runs of identical canned text purely on scheduling
-  noise, which is the clearest possible demonstration that these are not
-  latencies. The predecessor series' 18.8–25.1s hosted-runtime numbers came
-  from warm repeats. Do not quote these.
-- **`verify` has not been re-run since the redeploy.** The negative controls —
-  each leg alone with its credential removed — passed on the currency mesh and
-  are the only thing that separates "this leg is authenticated" from "this leg
-  reports an auth mode". Until they run again, the `auth_modes` in a run are a
-  label. This is the most overdue item on the list.
-- **The model judge has never judged.** Its failure paths are covered — an
-  unreadable verdict, a raising judge, a partial verdict that would drop a
-  participant, a judge contradicting its own scores — and all four fall back to
-  the deterministic rubric. The success path has never run against a model.
-- **The rubric is unvalidated.** Its weightings and thresholds — eight
-  specifics per hundred words for full marks, five citation markers, the
-  asymmetric length penalty — were chosen by argument, not calibration. Nobody
-  has checked that rubric rank correlates with human rank on even one set of
-  drafts.
+- **The deployed timings are single cold runs.** The 6700ms elapsed above is
+  one direct-brain sample with cold starts in it, and the 114.3s model run is
+  one sample too. The winner changed between two runs of identical canned text
+  purely on scheduling noise, which is the clearest possible demonstration that
+  these are not latencies. The predecessor series' 18.8–25.1s hosted-runtime
+  numbers came from warm repeats. Do not quote these.
+- **The audit block above has never been regenerated from the real store.**
 - **The judge sits on one participant's cloud.** See above.
 - **`docs/DEPLOYMENT_PLAN.md` and `docs/ARTICLE_PLAN.md` still describe the
   currency mesh.** They are accurate about what was deployed and stale about

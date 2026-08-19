@@ -6,9 +6,10 @@
 What this can support and what it cannot are different things, and the report
 prints the difference rather than leaving it to the reader:
 
-- It compares **models as configured here**: one prompt, one rubric, one judge,
-  no tools, whatever ``BEDROCK_MODEL_ID`` and the rest happened to be set to.
-  It is not a benchmark of Gemini against Nova against a Foundry deployment.
+- It compares **models as configured here**: one prompt at one version, one
+  rubric, one judge, one web_search tool on a six-search budget, whatever
+  ``BEDROCK_MODEL_ID`` and the rest happened to be set to. It is not a benchmark
+  of Gemini against Nova against a Foundry deployment.
 - ``direct``-brain drafts are excluded outright. They are canned text, identical
   on all three clouds, and averaging them into a model's score would manufacture
   a result out of scaffolding.
@@ -249,8 +250,9 @@ def _caveats(audit: Audit, min_runs: int) -> list[str]:
         "  - 1st% is how often the model cleared the pass mark without being sent "
         "back; rnds is its mean attempts. Runs recorded before the judge loop "
         "existed report 1 round, which is what they were",
-        "  - this compares these models as configured here -- one prompt, no tools, "
-        "one judge. It is not a general benchmark",
+        "  - this compares these models as configured here -- one prompt, one judge, "
+        "and one search tool the models use at very different rates. It is not a "
+        "general benchmark",
     ]
     if audit.narrow_wins:
         notes.append(

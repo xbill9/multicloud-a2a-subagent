@@ -12,9 +12,10 @@ corpus and the two panel tables can be put side by side.
 re-scores in memory, and writes a separate comparison -- an audit whose history
 can be rewritten to agree with a later opinion is not an audit.
 
-**What this does and does not establish.** If both judges see the same
-rotation, the same availability and comparable regret, then those findings do
-not depend on the rubric's weightings, which is the objection. It does *not*
+**What this does and does not establish.** If both judges agree that no cloud
+owns the winner, and see the same availability and comparable regret, then
+those findings do not depend on the rubric's weightings, which is the
+objection. It does *not*
 make the two judges independent in the stronger sense: the `llm` judge is
 Gemini, and one participant runs Gemini, so a shared-vendor bias would show up
 in both the participant's drafts and the judge's reading of them. That is
@@ -73,16 +74,16 @@ def compare(original: dict, second: dict, judge_mode: str) -> str:
         )
 
     lines += ["", "reading:"]
-    if original["rotates"] and second["rotates"]:
+    if original["no_dominant_cloud"] and second["no_dominant_cloud"]:
         lines.append(
             "  - both judges see a winner that no single cloud owns. That "
             "finding does not depend on the rubric's weightings."
         )
-    elif original["rotates"] != second["rotates"]:
+    elif original["no_dominant_cloud"] != second["no_dominant_cloud"]:
         lines.append(
             "  - THE JUDGES DISAGREE about whether any cloud dominates. On this "
-            "evidence the rotation claim is a property of the scorer, not of "
-            "the clouds, and should not be made."
+            "evidence the best-of-breed claim is a property of the scorer, not "
+            "of the clouds, and should not be made."
         )
     lines.append(
         "  - availability is identical under both by construction: it counts "

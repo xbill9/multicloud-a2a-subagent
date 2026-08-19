@@ -3,7 +3,7 @@
 Not a benchmark. The three models are deliberately unmatched -- a small fast
 one, a mid one, a reasoning deployment -- so "which is best" is both
 unanswerable and uninteresting. The testable claim is that the panel beats any
-member, for two reasons that must not be added together: the best draft rotates,
+member, for two reasons that must not be added together: no cloud owns the win,
 and a cloud that produces nothing is an outage for anyone who committed to it.
 """
 
@@ -46,8 +46,8 @@ def test_rotation_is_what_justifies_a_panel():
         [run({"aws": 20, "gcp": 18}), run({"aws": 17, "gcp": 21}), run({"aws": 19, "gcp": 15})]
     )
 
-    assert summary["rotates"] is True
-    assert "rotates between clouds" in panel.render(summary)
+    assert summary["no_dominant_cloud"] is True
+    assert "no cloud owns the winner" in panel.render(summary)
 
 
 def test_a_dominant_cloud_is_reported_as_not_earning_the_panel():
@@ -55,7 +55,7 @@ def test_a_dominant_cloud_is_reported_as_not_earning_the_panel():
     to be able to come out."""
     summary = panel.summarise([run({"aws": 20, "gcp": 10}) for _ in range(4)])
 
-    assert summary["rotates"] is False
+    assert summary["no_dominant_cloud"] is False
     assert "not earning its cost" in panel.render(summary)
 
 
