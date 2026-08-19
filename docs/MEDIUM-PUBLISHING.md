@@ -1,73 +1,101 @@
-# Getting `article-medium.md` into Medium
+# Getting the article into Medium
 
 ## Why this file exists
 
-`docs/article-cross-cloud-auth.md` is the repo version: markdown tables, GitHub
-renders them, done. Medium does not render markdown tables at all, and pasting
-one produces a wall of pipe characters. So the Medium version carries the same
-content with every table rendered as an image instead.
+There are two versions of the same article and exactly one reason for that:
+**Medium does not render markdown tables at all.** Pasting one produces a wall
+of pipe characters. So the Medium version carries the same prose with every
+table rendered as an image instead.
 
-That is the only structural difference. The prose is the same argument.
+| file | venue | tables |
+|---|---|---|
+| `article-devto-framework.md` | dev.to | markdown tables, rendered natively |
+| `article-medium-framework.md` | Medium | nine images, generated from the same numbers |
+
+The prose is the same argument, word for word, with two deliberate exceptions
+noted at the bottom.
+
+> The older pair, `article-medium.md` and `article-cross-cloud-auth.md`,
+> describe the **predecessor** currency mesh. They are accurate about what was
+> deployed then and stale about what this repo now is. The steps below apply to
+> them too; the image list does not.
 
 ## The steps
 
-1. Open a new Medium story and paste the body of `article-medium.md`, starting
-   at the H1. Medium keeps `#`/`##`, `>`, backtick fences, bold and italics from
-   pasted markdown; it drops image references, because it has no way to resolve
-   a relative path.
+1. Open a new Medium story and paste the body of `article-medium-framework.md`,
+   starting at the H1. Medium keeps `#`/`##`, `>`, backtick fences, bold and
+   italics from pasted markdown. It drops image references, because it cannot
+   resolve a relative path.
 
 2. Upload the nine images by hand, in order, at the point each `![...]` line
    sits. Delete the `![...]` line once its image is in place.
 
-   | # | File | Section |
+   | # | file | section |
    |---|---|---|
-   | 1 | `img/three-clouds-architecture.jpg` | hero |
-   | 2 | `img/medium/01-coordinator-choice.png` | The one decision |
-   | 3 | `img/medium/02-three-legs.png` | Three legs, three mechanisms |
-   | 4 | `img/medium/07-traps.png` | Five traps |
-   | 5 | `img/medium/04-matrix.png` | Does it actually interoperate? |
-   | 6 | `img/medium/06-cold-warm.png` | Deployment decisions |
-   | 7 | `img/medium/08-scaffolding.png` | Scaffolding worth stealing |
-   | 8 | `img/medium/05-controls.png` | Scaffolding worth stealing |
-   | 9 | `img/medium/03-latency.png` | What it costs |
+   | 1 | `img/medium/01-three-stacks.png` | opening |
+   | 2 | `img/medium/02-held-constant.png` | What actually has to be the same |
+   | 3 | `img/medium/03-bad-card.png` | The agent card advertises an address you cannot dial |
+   | 4 | `img/medium/04-platform-contracts.png` | The platform edits your request |
+   | 5 | `img/medium/05-session-cold-start.png` | The platform edits your request |
+   | 6 | `img/medium/06-three-models.png` | The models differ mostly where a rubric cannot see |
+   | 7 | `img/medium/07-scorer-changes-the-answer.png` | same section |
+   | 8 | `img/medium/08-availability.png` | same section |
+   | 9 | `img/medium/09-search-use.png` | Tool parity in availability is not tool parity in use |
 
 3. **Paste each image's alt text into Medium's caption field.** The alt text in
-   `article-medium.md` states the numbers in words. Every table in this piece is
-   an image, so without captions a screen reader — and Medium's own search index
-   — gets nothing from a third of the article. Medium's alt-text field is behind
-   the image's `⌥`/settings control; the caption is the visible line under it.
-   Use both.
+   the article states every number in words. Every table in this piece is an
+   image, so without captions a screen reader — and Medium's own search index —
+   gets nothing from a third of the article. The alt-text field is behind the
+   image's settings control; the caption is the visible line under it. Use both.
 
-4. Set the images to full width (click the image, pick the widest layout). They
-   are rendered 1500px wide, which is enough for Medium's largest layout on a
-   retina screen.
+4. Set the images to full width. They render 1500px wide, which is enough for
+   Medium's largest layout on a retina screen.
 
-5. Subtitle: the `###` line under the H1 becomes Medium's subtitle if you paste
-   it as the second block. Check it did — Medium sometimes takes the first
-   paragraph instead.
+5. The `###` line under the H1 becomes Medium's subtitle if pasted as the second
+   block. Check that it did — Medium sometimes takes the first paragraph instead.
+
+6. Leave the console blocks as text. Medium renders fenced code fine, and the
+   two in this piece (the interop matrix and the version-mismatch error) are
+   narrow enough not to wrap.
 
 ## Regenerating the graphics
 
 ```bash
+uv pip install --system matplotlib
 python3 docs/img/make_medium_graphics.py
 ```
 
-Every number in those images is hard-coded in that script, sourced from the
-rebuilt-mesh verification pass of 2026-08-07/08 recorded in `README.md` and
-`docs/DEPLOYMENT_PLAN.md`. **If a measurement changes there, change it in the
-script too** — an image is the one place in this repo where a stale number
-cannot be caught by grep.
-
-Requires `matplotlib` on the system interpreter (`uv pip install --system
-matplotlib`), and Liberation Sans / DejaVu Sans, both of which are already
-present on this machine.
+Every number in those images is hard-coded in that script, sourced from
+`README.md`, `docs/RUNBOOK.md` and `docs/INTEROP.md`. **If a measurement changes
+there, change it in the script too** — an image is the one place in this repo
+where a stale number cannot be caught by grep.
 
 ## What was checked
 
-- Palette validated against the dataviz skill's six checks on a `#ffffff`
-  surface: blue `#2a78d6` and orange `#eb6834` pass lightness band, chroma
-  floor, CVD separation (worst adjacent ΔE 24.7 protan), normal-vision floor,
-  and 3:1 contrast.
-- Every image was rendered and inspected for clipping and collisions rather
-  than assumed correct — four of the eight needed layout fixes on the first
-  pass, including a check-mark glyph that Liberation Sans does not carry.
+- **Palette**: categorical slots 1–3 of the dataviz reference palette — blue
+  `#2a78d6`, orange `#eb6834`, aqua `#1baf7a` — validated on a `#ffffff` surface
+  with `--pairs all`: lightness band, chroma floor, CVD separation (worst pair
+  ΔE 9.2 deutan), normal-vision floor (worst ΔE 24.0), contrast. Aqua sits below
+  3:1 on white, so every chart direct-labels its values, which is the documented
+  relief for that WARN.
+- **Light surface, deliberately.** Medium serves one image to both its themes.
+  Text drawn on transparency is illegible in whichever theme it was not drawn
+  for, so these are light cards that stay readable on a dark page.
+- **Every image was rendered and looked at**, which is not the same as assuming
+  the code was right. Four defects only a render could show: column headers kept
+  their backticks; an inline `code` span inside a longer cell kept its backticks
+  too; the per-character width used for wrapping was too small, so cells overran
+  into the next column; and the first `07` was a dumbbell whose two dots landed
+  on top of each other wherever the two scorers agreed. The dumbbell is now
+  grouped bars, which cannot collide.
+
+## The two places the prose differs from the dev.to version
+
+Both are consequences of the format, not edits to the argument:
+
+- **The troubleshooting reference is a list, not an image.** It is eleven rows
+  of three prose columns. As a 1500px image the text lands around 11px on a
+  phone, which is where a reference table stops being usable. Bold symptom, then
+  cause and fix in prose, is legible at any width.
+- **One sentence reads "those two" instead of "that"**, because the single
+  results table became two images.
