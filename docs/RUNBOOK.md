@@ -2,14 +2,24 @@
 
 Where the thing is, how to exercise it, and what is actually true about it.
 Written 2026-08-14 because the state of this project now lives in more places
-than anyone will remember.
+than anyone will remember. Claims re-checked against the code and the corpus on
+2026-08-18.
 
 `README.md` is the argument. This is the operating manual.
 
 **Published:** https://claude.ai/code/artifact/3617b74c-c6a4-4ada-bf36-985bd142a97b
 — linked from the front end's tab bar. Kept outside the service deliberately: a
 runbook reachable only from the thing it documents is no use on the morning
-that thing will not start. Update this file, then republish it to the same URL.
+that thing will not start.
+
+**The published page is not a render of this file.** Its source is
+`docs/runbook-artifact.html`, hand-built, with sections this one does not have —
+a ranked open-items table and per-claim status chips. It had no source in the
+repo at all until 2026-08-18, which is how the two drifted: the published page
+carried a retraction this file was still missing, and this file carried an
+INSTRUCTION correction the published page had not been given. **Both, or
+neither.** Edit this file and `docs/runbook-artifact.html` together, then
+republish the HTML to the same URL.
 
 ---
 
@@ -50,8 +60,8 @@ end. Then **review** to read the lineage and open the cited sources.
 ### 2. The suite — 8 seconds, no cloud, no spend
 
 ```bash
-python3 -m pytest -q      # 347 tests
-ruff check .              # 17 findings, all pre-existing
+python3 -m pytest -q      # 349 passed, 15 skipped
+ruff check .              # 2 findings, both pre-existing
 ```
 
 Entirely hermetic. Includes the guards that matter: SSRF refusals on the source

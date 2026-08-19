@@ -1,0 +1,519 @@
+<title>Research Mesh Runbook</title>
+<style>
+  /* Light is the base set. Every colour is a token here, so nothing is
+     defined only inside a media query or a [data-theme] block. */
+  :root {
+    --ground: #f7f8f7;
+    --raised: #ffffff;
+    --sunk: #eef1ef;
+    --ink: #16191c;
+    --muted: #5e6a68;
+    --faint: #8a9391;
+    --rule: #dde2df;
+    --accent: #0f6e5e;
+    --accent-soft: #e2efeb;
+    --pass: #1f7a4d;
+    --fail: #ab3a34;
+    --warn: #8a6412;
+    --shadow: 0 1px 2px rgba(20,25,28,.06);
+
+    --serif: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  :root:not([data-theme="light"]) {
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #101413;
+      --raised: #171c1b;
+      --sunk: #1c2321;
+      --ink: #e4e8e6;
+      --muted: #9aa5a2;
+      --faint: #737e7b;
+      --rule: #2a3230;
+      --accent: #56b9a4;
+      --accent-soft: #17302b;
+      --pass: #4fb87c;
+      --fail: #e0736c;
+      --warn: #d6a63f;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #101413;
+    --raised: #171c1b;
+    --sunk: #1c2321;
+    --ink: #e4e8e6;
+    --muted: #9aa5a2;
+    --faint: #737e7b;
+    --rule: #2a3230;
+    --accent: #56b9a4;
+    --accent-soft: #17302b;
+    --pass: #4fb87c;
+    --fail: #e0736c;
+    --warn: #d6a63f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 44px;
+  }
+  @media (min-width: 940px) {
+    .wrap { grid-template-columns: 200px minmax(0, 1fr); gap: 56px; align-items: start; }
+    nav.toc { position: sticky; top: 40px; }
+  }
+
+  /* Masthead ------------------------------------------------------------ */
+  header.mast { grid-column: 1 / -1; border-bottom: 2px solid var(--ink); padding-bottom: 20px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.6vw, 44px);
+    line-height: 1.1; letter-spacing: -.015em; margin: 0 0 12px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--muted); margin: 0; max-width: 62ch; }
+  .mast-meta {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px;
+    font-family: var(--mono); font-size: 12px; color: var(--faint);
+  }
+
+  /* Contents rail ------------------------------------------------------- */
+  nav.toc { font-family: var(--mono); font-size: 12px; line-height: 1.9; }
+  nav.toc p { margin: 0 0 8px; color: var(--faint); letter-spacing: .12em;
+              text-transform: uppercase; font-size: 10px; }
+  nav.toc a { display: block; color: var(--muted); text-decoration: none;
+              border-left: 2px solid var(--rule); padding-left: 10px; }
+  nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); border-left-color: var(--accent); }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: 40px; }
+  section { scroll-margin-top: 28px; }
+  h2 {
+    font-family: var(--serif); font-size: 25px; font-weight: 600; letter-spacing: -.01em;
+    margin: 0 0 6px; text-wrap: balance;
+  }
+  h3 { font-family: var(--sans); font-size: 15px; font-weight: 650; margin: 26px 0 6px; }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  .lede { color: var(--muted); margin-bottom: 20px; max-width: 68ch; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  strong { font-weight: 650; }
+  code { font-family: var(--mono); font-size: .88em; background: var(--sunk);
+         padding: 1px 5px; border-radius: 3px; }
+  pre {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+    background: var(--raised); color: var(--ink); border: 1px solid var(--rule);
+    border-radius: 6px; padding: 14px 16px; overflow-x: auto; margin: 0 0 16px;
+    box-shadow: var(--shadow);
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .cmt { color: var(--faint); }
+
+  /* The five levels — numbered because the order is real: cost ascending. */
+  ol.levels { list-style: none; margin: 0; padding: 0; display: flex;
+              flex-direction: column; gap: 2px; counter-reset: lvl; }
+  ol.levels > li {
+    counter-increment: lvl; display: grid; grid-template-columns: 42px minmax(0,1fr);
+    gap: 16px; padding: 18px 0; border-top: 1px solid var(--rule);
+  }
+  ol.levels > li::before {
+    content: counter(lvl); font-family: var(--mono); font-size: 12px; font-weight: 600;
+    color: var(--accent); background: var(--accent-soft); border-radius: 4px;
+    width: 26px; height: 26px; display: grid; place-items: center; margin-top: 2px;
+  }
+  .lvl-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .lvl-head h3 { margin: 0; font-size: 16px; }
+  .cost { font-family: var(--mono); font-size: 11px; color: var(--faint);
+          border: 1px solid var(--rule); border-radius: 99px; padding: 1px 9px; }
+  .cost.spend { color: var(--warn); border-color: var(--warn); }
+
+  /* Tables -------------------------------------------------------------- */
+  .scroll { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--rule);
+            border-radius: 6px; background: var(--raised); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--rule);
+           vertical-align: top; }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+       text-transform: uppercase; color: var(--faint); font-weight: 500; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; }
+  td code, th code { background: none; padding: 0; }
+
+  /* Claim chips — state reads as a word as well as a colour. */
+  .claims { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; padding: 0;
+            list-style: none; }
+  .claims li { display: grid; grid-template-columns: 92px minmax(0,1fr); gap: 14px;
+               align-items: start; }
+  .chip { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+          text-transform: uppercase; border-radius: 3px; padding: 3px 7px;
+          text-align: center; border: 1px solid currentColor; }
+  .chip.ok { color: var(--pass); }
+  .chip.no { color: var(--fail); }
+
+  .note { border-left: 3px solid var(--warn); background: var(--raised);
+          padding: 12px 16px; margin: 0 0 16px; border-radius: 0 5px 5px 0; }
+  .note p:last-child { margin-bottom: 0; }
+  .note b { color: var(--warn); }
+
+  footer { grid-column: 1 / -1; border-top: 1px solid var(--rule); padding-top: 18px;
+           color: var(--faint); font-size: 13px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Operating manual</p>
+    <h1>Research Mesh Runbook</h1>
+    <p class="standfirst">Three native research agents on Google Cloud, AWS and Azure, joined
+      over A2A, judged and audited from one public front door. Where it is, how to test it,
+      and which claims about it are actually measured.</p>
+    <div class="mast-meta">
+      <span>2026-08-18</span>
+      <span>prompt v3 &middot; rubric v1</span>
+      <span>349 tests</span>
+      <span><a href="https://research-master-wgcq55zbfq-uc.a.run.app">research-master-wgcq55zbfq-uc.a.run.app</a></span>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <p>Contents</p>
+    <a href="#where">Where it is</a>
+    <a href="#test">Testing it</a>
+    <a href="#instrument">Testing the judge</a>
+    <a href="#results">Reading results</a>
+    <a href="#deploy">Deploying</a>
+    <a href="#truth">True &amp; not true</a>
+    <a href="#open">Open items</a>
+    <a href="#wrong">When it breaks</a>
+  </nav>
+
+  <main>
+    <section id="where">
+      <h2>Where it is</h2>
+      <p class="lede">Only the master is public. The three researchers answer 403/401 to anyone
+        without a federated credential — a public page that can still only reach its peers with one.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Service</th><th>Role</th><th>Where</th><th>Open?</th></tr></thead>
+          <tbody>
+            <tr><td><code>research-master</code></td><td>front end, fan-out, judge</td><td>Cloud Run, us-central1</td><td>public</td></tr>
+            <tr><td><code>research-gcp</code></td><td>Gemini researcher, ADK <code>to_a2a</code></td><td>Cloud Run, us-central1</td><td>private</td></tr>
+            <tr><td><code>research_aws</code></td><td>Bedrock researcher, Strands</td><td>AgentCore, us-west-2</td><td>private</td></tr>
+            <tr><td><code>research-azure</code></td><td>Foundry researcher, Agent Framework</td><td>Container Apps, westus2</td><td>private</td></tr>
+            <tr><td><code>research-controls</code></td><td>negative-controls harness</td><td>Cloud Run <em>job</em></td><td>on demand</td></tr>
+            <tr><td><code>runs.jsonl</code>, <code>feedback.jsonl</code></td><td>append-only stores</td><td>gs://aisprint-491218-research-audit/</td><td>&mdash;</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Tabs on the front end: <strong>run a brief</strong>, <strong>last run</strong>,
+        <strong>live</strong> (topology, telemetry, event trace), <strong>flow</strong>,
+        <strong>reviews</strong>, <strong>wire</strong>, <strong>review</strong> (human in the
+        loop), <strong>audit</strong>.</p>
+    </section>
+
+    <section id="test">
+      <h2>Testing it</h2>
+      <p class="lede">Five levels, ascending in cost. The numbering is the sequence: each one
+        assumes the ones above it passed.</p>
+      <ol class="levels">
+        <li>
+          <div>
+            <div class="lvl-head"><h3>Click it</h3><span class="cost">30 seconds</span></div>
+            <p>Open the URL, go to <strong>live</strong>, then <strong>run a brief</strong> and send
+              one. Credential mints, card fetches and invocations animate as they happen. Then
+              <strong>review</strong> to read the lineage and open the cited sources.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <div class="lvl-head"><h3>The suite</h3><span class="cost">8 seconds, no cloud</span></div>
+<pre><code>python3 -m pytest -q   <span class="cmt"># 349 passed, 15 skipped</span>
+ruff check .           <span class="cmt"># 2 findings, both pre-existing</span></code></pre>
+            <p>Entirely hermetic. Includes the guards that matter: SSRF refusals on the source
+              fetcher, the researcher/coordinator role boundary, and <code>node --check</code> over
+              the page's inline JavaScript.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <div class="lvl-head"><h3>The local mesh</h3><span class="cost">real A2A, no spend</span></div>
+<pre><code>./infra/run_mesh.sh start                 <span class="cmt"># :10001 :10002 :10003</span>
+python3 -m coordinator.cli "your topic"
+./infra/run_mesh.sh stop</code></pre>
+            <p><code>direct</code>-brain, so drafts are canned and identical on all three. Exercises
+              the protocol and the orchestration, <strong>not</strong> the models. To watch it in the
+              UI, run a local master with <code>python3 -m uvicorn coordinator.service:app --port 8099</code>.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <div class="lvl-head"><h3>The demo</h3><span class="cost">the part worth watching</span></div>
+<pre><code>./infra/demo.sh</code></pre>
+            <p>Four acts, and acts 3 and 4 are the argument: a cloud goes offline and the run
+              <strong>degrades instead of failing</strong>, and a cloud phones it in and the judge
+              <strong>declines to pick it</strong>. Any demo shows three green ticks.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <div class="lvl-head"><h3>The controls</h3><span class="cost spend">~10 min, spends money</span></div>
+<pre><code>./infra/deploy_gcp.sh verify</code></pre>
+            <p>Each leg alone with its credentials, then each with its credential removed. Reads the
+              <strong>container's</strong> exit code: <code>0</code> answered, <code>3</code> denied,
+              anything else prints <code>THE CONTROL DID NOT RUN</code>.</p>
+            <div class="note"><p>Trust this least on faith and most in practice. On 2026-08-13 it
+              caught the Azure agent serving the internet while every other signal was green — and it
+              had itself been reporting false passes for two unrelated reasons before that.</p></div>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="instrument">
+      <h2>Testing the judge, not the mesh</h2>
+      <p class="lede">Whether the mesh runs is the easy question. Whether the judge is any good is
+        the open one.</p>
+<pre><code>curl -s $URL/api/calibration | python3 -m json.tool
+
+<span class="cmt"># or re-rank the whole stored corpus with a second judge, mutating nothing</span>
+python3 -m evaluations.rejudge --judge llm</code></pre>
+      <p>Rank a few runs by hand in the <strong>review</strong> tab and <code>agreement_rate</code>
+        becomes a real number. If the human and the judge diverge, the rubric is wrong — which is a
+        finding, and currently the biggest untested claim here. One review is not a calibration, and
+        the field says <code>reviewed: 1</code> so you can decline to read it as one.</p>
+      <p><code>rejudge</code> is the cheaper half of the same question, and it has already been run:
+        it answers "is this finding an artifact of one scorer?" without touching the record. It
+        cannot answer "is either scorer right", which is what the review tab is for.</p>
+    </section>
+
+    <section id="results">
+      <h2>Reading results</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Where</th><th>What</th></tr></thead>
+          <tbody>
+            <tr><td><strong>last run</strong> tab</td><td>the drafts themselves, full markdown</td></tr>
+            <tr><td><strong>review</strong> tab</td><td>each cloud's chain, the critique it earned, its sources</td></tr>
+            <tr><td><code>/api/last</code></td><td>the whole run as JSON, draft bodies included</td></tr>
+            <tr><td><code>/api/lineage</code></td><td>every version, critique and citation</td></tr>
+            <tr><td><code>/api/timeline</code></td><td>wall-clock wire timeline, plain text</td></tr>
+            <tr><td><code>/api/audit</code></td><td>cross-run aggregate per <code>cloud/model</code></td></tr>
+            <tr><td><code>runs.jsonl</code></td><td>every run ever, append-only, on GCS</td></tr>
+          </tbody>
+        </table>
+      </div>
+<pre><code><span class="cmt"># the whole history, read with the tooling the service uses</span>
+gcloud storage cp gs://aisprint-491218-research-audit/runs.jsonl .
+RESEARCH_EVAL_STORE=./runs.jsonl python3 -m evaluations.report</code></pre>
+      <p><code>?n=2</code> walks back a run on <code>/api/flow</code>, <code>/api/lineage</code>,
+        <code>/api/timeline</code> and <code>/api/source</code>.</p>
+    </section>
+
+    <section id="deploy">
+      <h2>Deploying</h2>
+<pre><code>PUBLIC=1 MODEL_MODE=llm OTEL_TRACES_EXPORTER=gcp ./infra/deploy_gcp.sh deploy
+./infra/deploy_gcp.sh wire            <span class="cmt"># fold AWS and Azure in</span>
+
+MODEL_MODE=llm ./infra/deploy_aws.sh deploy
+MODEL_MODE=llm ./infra/deploy_azure.sh deploy
+./infra/deploy_azure.sh foundry       <span class="cmt"># the model deployment</span>
+./infra/deploy_azure.sh fic           <span class="cmt"># Entra federated credential</span>
+./infra/deploy_azure.sh auth          <span class="cmt"># ENFORCE Entra on the ingress</span></code></pre>
+      <div class="note"><p><b>deploy_azure.sh auth is not optional and is easy to skip.</b>
+        <code>fic</code> decides who can <em>obtain</em> a token; <code>auth</code> decides whether
+        the app <em>demands</em> one. Ship only the first and the leg reports <code>entra-fic</code>
+        while answering anyone who asks. That is exactly what happened on 2026-08-13.</p></div>
+
+      <h3>The knobs that change what a run means</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>MODEL_MODE</code></td><td class="num">direct</td><td><code>llm</code> puts each cloud's real model in the path</td></tr>
+            <tr><td><code>RESEARCH_MODEL_{GCP,AWS,AZURE}</code></td><td class="num">per cloud</td><td>which model that cloud runs</td></tr>
+            <tr><td><code>RESEARCH_JUDGE_MODE</code></td><td class="num">rubric</td><td><code>llm</code> puts Gemini 2.5 Pro in the judge seat</td></tr>
+            <tr><td><code>RESEARCH_MAX_ROUNDS</code></td><td class="num">3</td><td><code>1</code> is the pre-loop behaviour, and the control</td></tr>
+            <tr><td><code>RESEARCH_PASS_MARK</code></td><td class="num">18.0</td><td>below this a draft is sent back</td></tr>
+            <tr><td><code>RESEARCH_SEARCH_PROVIDER</code></td><td class="num">duckduckgo</td><td><code>tavily</code>/<code>brave</code> need a key; <code>none</code> disables</td></tr>
+            <tr><td><code>RESEARCH_TIMEOUT_SECONDS</code></td><td class="num">300</td><td>per leg; both entry points read it</td></tr>
+            <tr><td><code>RESEARCH_MAX_RUNS_PER_HOUR</code></td><td class="num">30</td><td>only enforced when public</td></tr>
+            <tr><td><code>OTEL_TRACES_EXPORTER</code></td><td class="num">none</td><td><code>gcp</code> &rarr; Cloud Trace, needs no endpoint</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Changing the judge, the rubric, the pass mark, the instruction or the search provider
+        changes what every subsequent run <em>means</em>. The report warns on mixed judges, mixed
+        rubric versions and mixed prompt versions; it cannot warn about the rest.</p>
+    </section>
+
+    <section id="truth">
+      <h2>What is true, and what is not</h2>
+      <p class="lede">The difference is not obvious from the UI, which renders a measured result and
+        an unvalidated one identically.</p>
+      <ul class="claims">
+        <li><span class="chip ok">Measured</span><span>Three native agents, three federation modes, each with a <strong>positive and a negative control</strong> behind it &mdash; measured 2026-08-13, and not re-run since the agents were rebuilt for prompt v2 and v3.</span></li>
+        <li><span class="chip ok">Measured</span><span>The wrong-audience probe &mdash; a valid token minted for the wrong <code>aud</code> &mdash; was run on the <strong>GCP leg only</strong>. AWS and Azure have the credential-removed control and not this one.</span></li>
+        <li><span class="chip ok">Measured</span><span>The judge loop gates a draft and sends it back, and the mesh acts on the critique.</span></li>
+        <li><span class="chip no">Retracted</span><span><strong>"The loop lifted Gemini 13.8 &rarr; 21.1"</strong> is withdrawn as evidence the loop improves drafts. Of the three rewrites that can be inspected, two began from a 31-word Vertex 429 error scored as a draft and "improved" by being retried. The loop is shown to recover a failed leg; improving a merely weak draft rests on one case.</span></li>
+        <li><span class="chip ok">Measured</span><span>Traces are live: wire events reach the view before their leg finishes.</span></li>
+        <li><span class="chip ok">Measured</span><span>Instruction v2/v3 moved AWS from <strong>0 searches in 7 of 7 drafts</strong> to 3 zero-search drafts in 16 &mdash; never to usually, not never to always. Six sampled citations resolved.</span></li>
+        <li><span class="chip no">Open</span><span><strong>The six-search budget is binding on Gemini.</strong> It spends all six in every v3 run, so the ceiling is now shaping one participant's drafts and the comparison is partly a comparison of who reaches it.</span></li>
+        <li><span class="chip no">Contested</span><span><strong>The best-of-breed claim did not survive a second scorer.</strong> Re-ranking the same 24 runs with the model judge: Azure wins 87% and AWS 0%, against 43%/33% under the rubric, and AWS&rsquo;s regret goes from 1.32 to 9.38. Under a model judge a panel is not justified on quality. Availability is unaffected &mdash; no judge changes whether a draft existed.</span></li>
+        <li><span class="chip no">Open</span><span><strong>The rotation is not statistically distinguishable from random.</strong> 10/8/6 wins over 24 runs gives &chi;&sup2;=1.00 on 2 df &mdash; and that test is generous, since GCP answered only 14 of the 24 and cannot win one it did not answer. The defensible claim is that the winner is <em>unpredictable</em>, not that it rotates systematically, and unpredictability is the stronger argument for a panel anyway.</span></li>
+        <li><span class="chip no">Open</span><span><strong>All 24 runs are one topic domain</strong> &mdash; batteries, hydrogen, solar, reactors. Nothing here has been tried on a different kind of question.</span></li>
+        <li><span class="chip no">Open</span><span><strong>The rubric is uncalibrated.</strong> Its weightings were chosen by argument. <code>agreement_rate</code> is the check and it stands at one review.</span></li>
+        <li><span class="chip no">Open</span><span><strong>The model judge has judged the stored corpus, never a live run.</strong> <code>rejudge</code> loads the same <code>LlmJudge</code> the service would, offline, over recorded drafts &mdash; which is where the contested row above comes from. It has never been the in-run judge, so it has never gated, critiqued or driven the loop.</span></li>
+        <li><span class="chip no">Open</span><span>Nobody has opened the page in a browser from a session that could report back. The script parses and every field is produced — that is not the same as it looking right.</span></li>
+      </ul>
+    </section>
+
+    <section id="open">
+      <h2>Open items</h2>
+      <p class="lede">Ordered by what closing each one buys, not by effort. The first is the only
+        one that changes what every other number here is worth.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>#</th><th>Open</th><th>Why it matters</th><th>Closed when</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="num">1</td>
+              <td><strong>The rubric is uncalibrated</strong></td>
+              <td>Its weightings were chosen by argument. Every score on this page inherits that.
+                <code>agreement_rate</code> stands at <strong>1 review</strong>, and the two
+                scorers now disagree, so nothing else settles it.</td>
+              <td>~5 runs ranked by hand in the <strong>review</strong> tab</td>
+            </tr>
+            <tr>
+              <td class="num">2</td>
+              <td><strong>The model judge has never judged a live run</strong></td>
+              <td>It has re-scored the stored corpus offline. It has never sat in the judge seat
+                during a run, so no critique it wrote has ever been sent back to a researcher. It
+                also shares a vendor with the GCP participant, which blind labelling does not
+                address.</td>
+              <td>one run at <code>RESEARCH_JUDGE_MODE=llm</code> that does not fall back</td>
+            </tr>
+            <tr>
+              <td class="num">3</td>
+              <td><strong>The scores are not yet a comparison</strong></td>
+              <td>24 runs, but the history splits at prompt v1/v2/v3 so they are not one
+                population — and all 24 are technology surveys, which is one kind of question.</td>
+              <td>~5 more runs on v3, and a brief that is not a technology survey</td>
+            </tr>
+            <tr>
+              <td class="num">4</td>
+              <td><strong>The loop is unproven on weak drafts</strong></td>
+              <td>Two of three inspectable rewrites started from a provider error, not a poor
+                draft. The guard that stops errors being scored landed after them.</td>
+              <td>3–4 rewrites that begin from a real draft, recorded after 2026-08-14</td>
+            </tr>
+            <tr>
+              <td class="num">4b</td>
+              <td><strong>Search use is uneven, in both directions</strong></td>
+              <td>AWS still returns the occasional zero-search draft — 1 in 7 under v3 — while
+                Gemini spends the whole six-search budget every run. One is under-using the tool
+                and the other is capped by it.</td>
+              <td>a run where neither cloud is at an extreme, or a raised budget</td>
+            </tr>
+            <tr>
+              <td class="num">5</td>
+              <td><strong><code>verify</code> has not run since prompt v2 and v3</strong></td>
+              <td>The controls passed on 2026-08-13; every agent has been rebuilt since.
+                Until it runs again the auth modes are a label.</td>
+              <td><code>./infra/deploy_gcp.sh verify</code></td>
+            </tr>
+            <tr>
+              <td class="num">6</td>
+              <td><strong>Nobody has seen the page render</strong></td>
+              <td>The script parses, every id exists, every field is produced. None of that is
+                the same as it looking right.</td>
+              <td>somebody opens it and says what is ugly</td>
+            </tr>
+            <tr>
+              <td class="num">7</td>
+              <td><strong>The public limiter is per instance</strong></td>
+              <td>Honest only because the deploy pins one instance. Raise
+                <code>--max-instances</code> and the effective limit multiplies.</td>
+              <td>a shared counter, or a note on the deploy</td>
+            </tr>
+            <tr>
+              <td class="num">8</td>
+              <td><strong>Three docs describe the currency mesh</strong></td>
+              <td><code>DEPLOYMENT_PLAN.md</code>, <code>ARTICLE_PLAN.md</code>,
+                <code>FOLLOWUP.md</code> — accurate about what was deployed, stale about what
+                this is.</td>
+              <td>rewrite or date-stamp them</td>
+            </tr>
+            <tr>
+              <td class="num">9</td>
+              <td><strong>The matrix axes overstate</strong></td>
+              <td>Three client stacks are three façades over one <code>a2a-sdk</code>; two serving
+                stacks with three executors. Disclosed in <code>FOLLOWUP.md</code>, not fixed.</td>
+              <td>a non-Python client, or relabel the axis</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Closed and not worth reopening: federation with positive <em>and</em> negative controls on
+        all three legs; live tracing; OpenTelemetry to Cloud Trace; the Azure ingress exposure;
+        provider errors no longer scored as drafts; the search budget that stopped one literal
+        reading of the instruction from costing 25 model calls a brief.</p>
+      <div class="note"><p><b>Two items were on that closed list and have been taken back off.</b>
+        "The loop lifted Gemini from 13.8 to 21.1" is retracted, above. "AWS now searches every
+        run" was never what the corpus said — 1 of 7 v3 drafts still made no search. Both were
+        written down as finished on the strength of a single run.</p></div>
+    </section>
+
+    <section id="wrong">
+      <h2>When something is wrong</h2>
+<pre><code><span class="cmt"># what a service thinks it is: public?, limits, telemetry, peers</span>
+curl -s $URL/api/health | python3 -m json.tool
+
+<span class="cmt"># each agent reports its own brain, model, search config, telemetry</span>
+TOK=$(gcloud auth print-identity-token)
+curl -s -H "Authorization: Bearer $TOK" https://research-gcp-wgcq55zbfq-uc.a.run.app/health
+
+<span class="cmt"># the last run's calls, with provider request ids</span>
+curl -s $URL/api/timeline</code></pre>
+      <p>Failure kinds are load-bearing. <code>provider</code> means the remote answered and
+        declined; <code>protocol</code> means the reply never arrived. Filing the first as the second
+        turns "Bedrock refused the topic" into "AgentCore broke A2A". The <code>request_id</code> in
+        the timeline is the provider's own — paste it into CloudWatch or Cloud Logging. It is the
+        only column here that someone outside the process can check.</p>
+
+      <h3>Traps already paid for</h3>
+      <ul class="claims">
+        <li><span class="chip no">Cost a day</span><span>A control that cannot run is not a control that passed. Two separate causes produced six clean-looking denials while nothing was tested.</span></li>
+        <li><span class="chip no">Corrupts a run</span><span>Never edit a script while <code>verify</code> is running. Bash reads a script incrementally.</span></li>
+        <li><span class="chip no">Silent</span><span>The controls job runs <code>built_image()</code> — the image from the last <code>deploy</code>. A code change is not in it until you redeploy.</span></li>
+        <li><span class="chip no">Silent</span><span><code>gcloud run jobs execute --wait</code> prints nothing on stdout. Use <code>--async</code> if you need the execution name.</span></li>
+        <li><span class="chip no">Lost a day</span><span>Work that is deployed but not committed does not exist.</span></li>
+        <li><span class="chip no">Rots quietly</span><span>An open-items list decays as fast as the work closes it, and nothing fails when it does. Four items on this page's repo twin stayed "open" for four days after they were finished, contradicting the same file's status section.</span></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>The source of this page is <code>docs/runbook-artifact.html</code> in
+      <code>multicloud-a2a-subagent</code>; <code>docs/RUNBOOK.md</code> is the plain-text manual
+      that lives beside the code. They are two documents, not a render of one, and they have drifted
+      before. The README is the argument; both of these are the manual.</p>
+  </footer>
+</div>
