@@ -1,4 +1,15 @@
-<title>Three Clouds, One Brief</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strands on AgentCore, Answering Two Other Clouds: The Contract, the Header, and the microVM</title>
+<meta name="description" content="A Strands agent on Bedrock AgentCore, answering callers on Google Cloud and Azure — the container contract, the header the platform drops, and the session that is a cold start">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Strands on AgentCore, Answering Two Other Clouds: The Contract, the Header, and the microVM">
+<meta property="og:description" content="A Strands agent on Bedrock AgentCore, answering callers on Google Cloud and Azure — the container contract, the header the platform drops, and the session that is a cold start">
+<meta property="og:image" content="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/10-agentcore-contract.png">
+<link rel="canonical" href="https://xbill9.github.io/multicloud-a2a-subagent/medium-aws.html">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
@@ -147,21 +158,23 @@ figcaption {
   .masthead h1 { font-size: 2rem; }
   figcaption { flex-direction: column; gap: 6px; }
 }
+
+article.sheet { max-width: 40rem; }
+article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-weight: 600; font-size: 2.4rem; line-height: 1.14; letter-spacing: -0.02em; margin: 48px 0 20px; }
 </style>
-<div class="sheet">
-  <div class="slug"><span>Medium proof</span><span>docs/article-medium-aws.md</span><span><b>4 images</b> — tables rendered, captions ready to paste</span></div>
-  <header class="masthead">
-    <h1>Strands on AgentCore, Answering Two Other Clouds: The Contract, the Header, and the microVM</h1>
-    <p class="standfirst">A Strands agent on Bedrock AgentCore, answering callers on Google Cloud and Azure — the container contract, the header the platform drops, and the session that is a cold start</p>
-  </header>
-  <article><p>Strands ships no A2A server integration, which turns out to be the easiest starting position of the three frameworks I used: you drop the agent behind the <code>a2a-sdk</code> reference routes and you are serving the protocol's own implementation.</p>
+</head>
+<body>
+<article class="sheet">
+  <h1>Strands on AgentCore, Answering Two Other Clouds: The Contract, the Header, and the microVM</h1>
+  <p class="standfirst">A Strands agent on Bedrock AgentCore, answering callers on Google Cloud and Azure — the container contract, the header the platform drops, and the session that is a cold start</p>
+  <p>Strands ships no A2A server integration, which turns out to be the easiest starting position of the three frameworks I used: you drop the agent behind the <code>a2a-sdk</code> reference routes and you are serving the protocol's own implementation.</p>
 <p>The hard part was never Strands. It was <strong>AgentCore Runtime</strong> — a container contract that is narrow, mostly undocumented in one place, and different from every other runtime in the mesh.</p>
 <p>I ran that agent alongside a Google ADK agent on Cloud Run and a Microsoft Agent Framework agent on Container Apps, all three answering the same research brief over A2A v1.0 to one coordinator. Everything below is the AWS side of it.</p>
 <p>The code: <a href="https://github.com/xbill9/multicloud-a2a-subagent">github.com/xbill9/multicloud-a2a-subagent</a>.</p>
 <hr />
 <h2>The contract, in one place</h2>
 <p>Every clause here is load-bearing, and each one differs from what the other two runtimes want:</p>
-<figure><img src="img/medium/10-agentcore-contract.png" alt="The AgentCore Runtime container contract, with Cloud Run and Container Apps as the control column. Port 9000 rather than 8080. Invoke path slash, with the platform exposing /invocations/. Health is GET /ping returning Healthy. ARM64 is required. The card sits at /.well-known/agent-card.json on all three. AgentCore drops the A2A-Version header where the other two forward it, and its cold-start unit is a session mapped to a microVM rather than an instance or a revision replica"><figcaption><span class="stamp">01<em>/04</em></span><p class="alt"><b>10-agentcore-contract.png</b>The AgentCore Runtime container contract, with Cloud Run and Container Apps as the control column. Port 9000 rather than 8080. Invoke path slash, with the platform exposing /invocations/. Health is GET /ping returning Healthy. ARM64 is required. The card sits at /.well-known/agent-card.json on all three. AgentCore drops the A2A-Version header where the other two forward it, and its cold-start unit is a session mapped to a microVM rather than an instance or a revision replica</p></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/10-agentcore-contract.png" alt="The AgentCore Runtime container contract, with Cloud Run and Container Apps as the control column. Port 9000 rather than 8080. Invoke path slash, with the platform exposing /invocations/. Health is GET /ping returning Healthy. ARM64 is required. The card sits at /.well-known/agent-card.json on all three. AgentCore drops the A2A-Version header where the other two forward it, and its cold-start unit is a session mapped to a microVM rather than an instance or a revision replica"><figcaption>The AgentCore Runtime container contract, with Cloud Run and Container Apps as the control column. Port 9000 rather than 8080. Invoke path slash, with the platform exposing /invocations/. Health is GET /ping returning Healthy. ARM64 is required. The card sits at /.well-known/agent-card.json on all three. AgentCore drops the A2A-Version header where the other two forward it, and its cold-start unit is a session mapped to a microVM rather than an instance or a revision replica</figcaption></figure>
 <p>Port 9000, not 8080 — 8080 is the HTTP protocol's port. Path <code>/</code>, not <code>/invocations</code> — that is the path the <em>platform</em> exposes to your callers, not the one your container serves. A Starlette app that already serves JSON-RPC at <code>/</code> and the card at the well-known path satisfies this unmodified.</p>
 <p><code>/ping</code> is the one you have to add, and it is not your existing <code>/health</code>. A container that fails the ping never reaches the point of being invoked. One detail worth copying: my <code>/ping</code> deliberately <strong>omits</strong> <code>time_of_last_update</code>. A timestamp that advances on every poll reads as a continuous status change, which stops the idle session timeout from ever firing and leaks sessions until MaxLifetime.</p>
 <hr />
@@ -184,7 +197,7 @@ figcaption {
 <h2>A session is a microVM, and you are probably minting one per call</h2>
 <p>My coordinator generated a fresh AgentCore session id for every call. AgentCore gives each session its own microVM, so every call was paying for a microVM start.</p>
 <p>It presented as a <strong>fixed per-client cost</strong> — one client's cell was always slow — until I noticed the slow cell <em>moved between clients</em>. A fixed per-client cost cannot move. Something per-call can:</p>
-<figure><img src="img/medium/05-session-cold-start.png" alt="AgentCore session cold starts. With a fresh session id per call, the default, five runs measured 5926 to 6037 milliseconds. With the session id pinned, two runs measured 704 to 710 milliseconds. It presented as a fixed per-client cost until the slow cell moved between clients, and a fixed cost cannot move"><figcaption><span class="stamp">02<em>/04</em></span><p class="alt"><b>05-session-cold-start.png</b>AgentCore session cold starts. With a fresh session id per call, the default, five runs measured 5926 to 6037 milliseconds. With the session id pinned, two runs measured 704 to 710 milliseconds. It presented as a fixed per-client cost until the slow cell moved between clients, and a fixed cost cannot move</p></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/05-session-cold-start.png" alt="AgentCore session cold starts. With a fresh session id per call, the default, five runs measured 5926 to 6037 milliseconds. With the session id pinned, two runs measured 704 to 710 milliseconds. It presented as a fixed per-client cost until the slow cell moved between clients, and a fixed cost cannot move"><figcaption>AgentCore session cold starts. With a fresh session id per call, the default, five runs measured 5926 to 6037 milliseconds. With the session id pinned, two runs measured 704 to 710 milliseconds. It presented as a fixed per-client cost until the slow cell moved between clients, and a fixed cost cannot move</figcaption></figure>
 <p>The two conditions were interleaved in time, so this is not warming drift. Releasing the pin brings it straight back, and the whole column drops with the pin because none of the cells is paying for a new microVM.</p>
 <p>Set your session id explicitly unless you actually want per-call isolation. What is <em>not</em> established here: why cold capacity lands on one call rather than another, or how many warm sessions AgentCore keeps. Only the cause of the latency is proven.</p>
 <hr />
@@ -228,8 +241,8 @@ async def respond(prompt: str) -&gt; str:
 <hr />
 <h2>How Nova micro actually did</h2>
 <p>Twenty-four briefs, each answered by all three clouds, scored twice — once by a deterministic rubric, once by re-ranking the same stored drafts with a model judge:</p>
-<figure><img src="img/medium/07-scorer-changes-the-answer.png" alt="Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge"><figcaption><span class="stamp">03<em>/04</em></span><p class="alt"><b>07-scorer-changes-the-answer.png</b>Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge</p></figcaption></figure>
-<figure><img src="img/medium/08-availability.png" alt="Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one"><figcaption><span class="stamp">04<em>/04</em></span><p class="alt"><b>08-availability.png</b>Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one</p></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/07-scorer-changes-the-answer.png" alt="Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge"><figcaption>Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge</figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/08-availability.png" alt="Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one"><figcaption>Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one</figcaption></figure>
 <p>Take the good news and the bad news in that order, because both are real.</p>
 <p><strong>Bedrock was the only leg that answered every single time.</strong> 100% availability, where Gemini managed 58% — it hit Vertex quota — and Azure 96%. On this corpus the most valuable property any participant had was <em>producing an answer at all</em>, and the AWS leg is the only one that never failed to. It was also consistently the fastest brain in the mesh.</p>
 <p><strong>And it wrote the worst drafts, by a margin the rubric could not see.</strong> Under a deterministic rubric Nova sits 1.32 points behind the panel's best; under a model judge it sits <strong>9.38</strong> behind, and wins none of the 24 briefs. It also ignored its search tool entirely in <strong>7 of 7</strong> drafts under my first instruction, improving to 1 in 7 only after two prompt revisions.</p>
@@ -259,5 +272,7 @@ async def respond(prompt: str) -&gt; str:
 <hr />
 <p><strong>Repo:</strong> <a href="https://github.com/xbill9/multicloud-a2a-subagent">github.com/xbill9/multicloud-a2a-subagent</a> — the three agents, the coordinator and judge, the 3×3 interop matrix, the negative controls and the deploy scripts. <code>docs/INTEROP.md</code> carries each finding with the date it was measured.</p>
 <hr />
-<p><em>Every table in this piece is an image, because Medium renders no markdown tables. They are generated from the measured numbers by <code>docs/img/make_medium_graphics.py</code>, so they cannot drift from the results they describe without the script drifting too.</em></p></article>
-</div>
+<p><em>Every table in this piece is an image, because Medium renders no markdown tables. They are generated from the measured numbers by <code>docs/img/make_medium_graphics.py</code>, so they cannot drift from the results they describe without the script drifting too.</em></p>
+</article>
+</body>
+</html>

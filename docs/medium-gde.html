@@ -1,4 +1,15 @@
-<title>Three Clouds, One Brief</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADK Beyond Its Own Tests: What Happens When Your Agent Answers a Client That Is Not ADK</title>
+<meta name="description" content="One ADK agent on Cloud Run, serving A2A to clients that are not ADK — and the Google-side findings that only a deployment and a foreign caller can produce">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ADK Beyond Its Own Tests: What Happens When Your Agent Answers a Client That Is Not ADK">
+<meta property="og:description" content="One ADK agent on Cloud Run, serving A2A to clients that are not ADK — and the Google-side findings that only a deployment and a foreign caller can produce">
+<meta property="og:image" content="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/03-bad-card.png">
+<link rel="canonical" href="https://xbill9.github.io/multicloud-a2a-subagent/medium-gde.html">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
@@ -147,14 +158,16 @@ figcaption {
   .masthead h1 { font-size: 2rem; }
   figcaption { flex-direction: column; gap: 6px; }
 }
+
+article.sheet { max-width: 40rem; }
+article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-weight: 600; font-size: 2.4rem; line-height: 1.14; letter-spacing: -0.02em; margin: 48px 0 20px; }
 </style>
-<div class="sheet">
-  <div class="slug"><span>Medium proof</span><span>docs/article-medium-gde.md</span><span><b>3 images</b> — tables rendered, captions ready to paste</span></div>
-  <header class="masthead">
-    <h1>ADK Beyond Its Own Tests: What Happens When Your Agent Answers a Client That Is Not ADK</h1>
-    <p class="standfirst">One ADK agent on Cloud Run, serving A2A to clients that are not ADK — and the Google-side findings that only a deployment and a foreign caller can produce</p>
-  </header>
-  <article><p><code>to_a2a()</code> turns an ADK agent into an A2A server in one line. That is genuinely the shortest path from an <code>LlmAgent</code> to something another vendor's agent can call, and it is the reason I started here.</p>
+</head>
+<body>
+<article class="sheet">
+  <h1>ADK Beyond Its Own Tests: What Happens When Your Agent Answers a Client That Is Not ADK</h1>
+  <p class="standfirst">One ADK agent on Cloud Run, serving A2A to clients that are not ADK — and the Google-side findings that only a deployment and a foreign caller can produce</p>
+  <p><code>to_a2a()</code> turns an ADK agent into an A2A server in one line. That is genuinely the shortest path from an <code>LlmAgent</code> to something another vendor's agent can call, and it is the reason I started here.</p>
 <p>Then I put that agent in a mesh where the callers are <strong>not</strong> ADK — a Strands agent on Bedrock AgentCore and a Microsoft Agent Framework agent on Azure Container Apps, all three given the same research brief, all three answering over A2A v1.0 to one coordinator on Cloud Run.</p>
 <p>Everything below is what showed up on the Google side of that, and none of it is visible from a laptop.</p>
 <p>The code: <a href="https://github.com/xbill9/multicloud-a2a-subagent">github.com/xbill9/multicloud-a2a-subagent</a>.</p>
@@ -168,7 +181,7 @@ figcaption {
 <p>A public HTTPS endpoint advertising unroutable plaintext.</p>
 <p><strong>It cannot reproduce locally.</strong> On a laptop the bind address and the dial address are the same string, which is exactly how it survives into a deployment. My other two agents take a <code>PUBLIC_URL</code> and advertise that — the behaviour ADK is missing, not anything clever.</p>
 <p>Which clients survive it is the part worth knowing:</p>
-<figure><img src="img/medium/03-bad-card.png" alt="Which client survives a card advertising 0.0.0.0:8080. The a2a-sdk client is ok because it rewrites the interfaces after card resolution. The agent-framework A2AAgent is ok because it never routes by card, so a bad card is inert. Google ADK's own RemoteA2aAgent fails, because it routes by card and dials 0.0.0.0:8080"><figcaption><span class="stamp">01<em>/03</em></span><p class="alt"><b>03-bad-card.png</b>Which client survives a card advertising 0.0.0.0:8080. The a2a-sdk client is ok because it rewrites the interfaces after card resolution. The agent-framework A2AAgent is ok because it never routes by card, so a bad card is inert. Google ADK's own RemoteA2aAgent fails, because it routes by card and dials 0.0.0.0:8080</p></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/03-bad-card.png" alt="Which client survives a card advertising 0.0.0.0:8080. The a2a-sdk client is ok because it rewrites the interfaces after card resolution. The agent-framework A2AAgent is ok because it never routes by card, so a bad card is inert. Google ADK's own RemoteA2aAgent fails, because it routes by card and dials 0.0.0.0:8080"><figcaption>Which client survives a card advertising 0.0.0.0:8080. The a2a-sdk client is ok because it rewrites the interfaces after card resolution. The agent-framework A2AAgent is ok because it never routes by card, so a bad card is inert. Google ADK's own RemoteA2aAgent fails, because it routes by card and dials 0.0.0.0:8080</figcaption></figure>
 <p><strong>ADK's own client cannot reach ADK's own server once hosted.</strong> Both halves pass Google's own tests, because locally the two addresses are identical. The one pairing that is entirely first-party code is the one that cannot complete a hop.</p>
 <p>And the failure is reported at the wrong layer. Having dialled <code>0.0.0.0:8080</code> and failed, <code>RemoteA2aAgent</code> raises:</p>
 <pre><code class="language-text">AttributeError: 'A2AClientError' object has no attribute 'status_code'
@@ -235,8 +248,8 @@ failed to resolve binary path: error finding executable &quot;python&quot; in PA
 <hr />
 <h2>How Gemini actually behaved next to two other models</h2>
 <p>Twenty-four briefs, each answered by all three clouds, scored twice — once by a deterministic rubric, once by re-ranking the same stored drafts with a model judge:</p>
-<figure><img src="img/medium/07-scorer-changes-the-answer.png" alt="Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge"><figcaption><span class="stamp">02<em>/03</em></span><p class="alt"><b>07-scorer-changes-the-answer.png</b>Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge</p></figcaption></figure>
-<figure><img src="img/medium/08-availability.png" alt="Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one"><figcaption><span class="stamp">03<em>/03</em></span><p class="alt"><b>08-availability.png</b>Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one</p></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/07-scorer-changes-the-answer.png" alt="Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge"><figcaption>Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge</figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/08-availability.png" alt="Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one"><figcaption>Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one</figcaption></figure>
 <p>Three things about the Gemini row.</p>
 <p><strong>It answered 58% of the briefs it was invited to</strong> — the lowest of the three, on the one leg that never leaves its own cloud and is otherwise the most reliable path in the mesh. The failure recorded against it is a Vertex <code>429</code>. Quota is the documented cause rather than a proven one; I have not attributed the ten missing drafts individually. Either way, the largest difference between these three models on this corpus is not prose quality, it is whether a draft came back.</p>
 <p><strong>It is the only one that spends its entire search budget, every run.</strong> All three agents get six searches. Under the current instruction Gemini uses all six in every single run, where the Bedrock model still skips searching entirely in one run out of seven. That is a real behavioural difference — and it also means the ceiling is now shaping the drafts I am comparing. A model that always spends its last search would spend more if it had it.</p>
@@ -265,5 +278,7 @@ failed to resolve binary path: error finding executable &quot;python&quot; in PA
 <hr />
 <p><strong>Repo:</strong> <a href="https://github.com/xbill9/multicloud-a2a-subagent">github.com/xbill9/multicloud-a2a-subagent</a> — the three agents, the shared instruction and tool, the coordinator and judge, the 3×3 interop matrix and the deploy scripts. <code>docs/INTEROP.md</code> carries each finding with the date it was measured.</p>
 <hr />
-<p><em>Every table in this piece is an image, because Medium renders no markdown tables. They are generated from the measured numbers by <code>docs/img/make_medium_graphics.py</code>, so they cannot drift from the results they describe without the script drifting too.</em></p></article>
-</div>
+<p><em>Every table in this piece is an image, because Medium renders no markdown tables. They are generated from the measured numbers by <code>docs/img/make_medium_graphics.py</code>, so they cannot drift from the results they describe without the script drifting too.</em></p>
+</article>
+</body>
+</html>

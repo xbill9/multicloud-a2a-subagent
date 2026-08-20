@@ -30,6 +30,11 @@ import markdown
 
 DOCS = Path(__file__).parent
 SLUGS = ("framework", "gde", "aws")
+
+#: Where the `--web` pages are served from. Image sources are written absolute
+#: against this: a fetcher that rebuilds the page elsewhere has nothing to
+#: resolve a relative path against.
+SITE = "https://xbill9.github.io/multicloud-a2a-subagent"
 SCRATCH = Path("/tmp/claude-1000/-home-xbill-multicloud-a2a-subagent") \
     / "6ddb71c6-f02a-46a7-ae5e-9981bdd7eead/scratchpad"
 
@@ -182,6 +187,15 @@ figcaption {
 
 
 def build(slug: str, out_path: Path, *, web: bool) -> Path:
+    """Render one article.
+
+    The two modes differ in more than the image sources, and the first `--web`
+    pass got this wrong: it emitted the same bare fragment the proof uses --
+    no doctype, no `<html>`, no `<body>` -- because an Artifact host supplies
+    that skeleton itself. Served raw from Pages there is nothing to supply it,
+    and Medium's importer refused the page. A page meant to be *read by a
+    machine* needs the whole document.
+    """
     text = (DOCS / f"article-medium-{slug}.md").read_text()
 
     title = re.search(r"^# (.+)$", text, re.M).group(1)
@@ -191,44 +205,76 @@ def build(slug: str, out_path: Path, *, web: bool) -> Path:
 
     html = markdown.markdown(text, extensions=["fenced_code", "attr_list", "sane_lists"])
     count = html.count("<img")
+    first_image = ""
 
     def figure(match, _n=[0]):
+        nonlocal first_image
         _n[0] += 1
         alt, src = match.group("alt"), match.group("src")
         if web:
-            # A path Medium's fetcher can resolve against the page URL. Pages
-            # serves docs/ at the site root, so this is unchanged from source.
-            source = src
+            source = f"{SITE}/{src}"
+            first_image = first_image or source
+            # Caption is the alt text alone. Medium turns a figcaption into the
+            # image's caption on import, which is exactly the text the
+            # publishing checklist would otherwise have someone paste by hand.
+            caption = f'<figcaption>{alt}</figcaption>'
         else:
             data = base64.b64encode((DOCS / src).read_bytes()).decode()
             source = f"data:image/png;base64,{data}"
-        return (
-            f'<figure><img src="{source}" alt="{alt}">'
-            f'<figcaption><span class="stamp">{_n[0]:02d}<em>/{count:02d}</em></span>'
-            f'<p class="alt"><b>{Path(src).name}</b>{alt}</p></figcaption></figure>'
-        )
+            caption = (
+                f'<figcaption><span class="stamp">{_n[0]:02d}<em>/{count:02d}</em></span>'
+                f'<p class="alt"><b>{Path(src).name}</b>{alt}</p></figcaption>'
+            )
+        return f'<figure><img src="{source}" alt="{alt}">{caption}</figure>'
 
     html = re.sub(r'<img alt="(?P<alt>[^"]*)" src="(?P<src>[^"]*)"\s*/?>', figure, html)
     html = html.replace("<p><figure>", "<figure>").replace("</figure></p>", "</figure>")
 
-    slug_line = (
-        f'<span>Medium proof</span><span>docs/article-medium-{slug}.md</span>'
-        f'<span><b>{count} images</b> — tables rendered, captions ready to paste</span>'
-    )
-    page = f"""<title>Three Clouds, One Brief</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
-<style>{CSS}</style>
-<div class="sheet">
-  <div class="slug">{slug_line}</div>
+    head_extra = ""
+    body = ""
+    if web:
+        head_extra = (
+            f'\n<meta name="description" content="{standfirst}">'
+            f'\n<meta property="og:type" content="article">'
+            f'\n<meta property="og:title" content="{title}">'
+            f'\n<meta property="og:description" content="{standfirst}">'
+            + (f'\n<meta property="og:image" content="{first_image}">' if first_image else "")
+            + f'\n<link rel="canonical" href="{SITE}/medium-{slug}.html">'
+        )
+        body = (
+            f'<article class="sheet">\n  <h1>{title}</h1>\n'
+            f'  <p class="standfirst">{standfirst}</p>\n  {html}\n</article>'
+        )
+    else:
+        body = f"""<div class="sheet">
+  <div class="slug"><span>Medium proof</span><span>docs/article-medium-{slug}.md</span>
+  <span><b>{count} images</b> — tables rendered, captions ready to paste</span></div>
   <header class="masthead">
     <h1>{title}</h1>
     <p class="standfirst">{standfirst}</p>
   </header>
   <article>{html}</article>
-</div>
-"""
+</div>"""
+
+    fonts = ('<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+             '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+             '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+             'family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&'
+             'family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400'
+             '&display=swap">')
+
+    if web:
+        page = (f'<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+                f'<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+                f'<title>{title}</title>{head_extra}\n{fonts}\n<style>{CSS}\n'
+                f'article.sheet {{ max-width: 40rem; }}\n'
+                f'article.sheet > h1 {{ font-family: "IBM Plex Sans", system-ui, sans-serif;'
+                f' font-weight: 600; font-size: 2.4rem; line-height: 1.14;'
+                f' letter-spacing: -0.02em; margin: 48px 0 20px; }}\n'
+                f'</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n')
+    else:
+        page = f"<title>{title}</title>\n{fonts}\n<style>{CSS}</style>\n{body}\n"
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(page)
     return out_path
