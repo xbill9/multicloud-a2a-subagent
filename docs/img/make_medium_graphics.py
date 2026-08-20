@@ -470,6 +470,36 @@ def tool_use():
     )
 
 
+# --------------------------------------------------------------------------
+# 10 -- the AgentCore contract, AWS-first
+# --------------------------------------------------------------------------
+
+def agentcore_contract():
+    """The same contract as 04, ordered for a reader who starts on AWS.
+
+    A separate image rather than a reuse: in the AWS article AgentCore is the
+    subject and the other two runtimes are the control column, so AgentCore
+    reads first. Re-ordering the columns of 04 in the reader's head is work the
+    image should be doing.
+    """
+    table(
+        "10-agentcore-contract.png",
+        "The AgentCore Runtime container contract",
+        "Every clause is load-bearing. The other two runtimes are the control column.",
+        ["", "*AgentCore Runtime*", "Cloud Run", "Container Apps"],
+        [
+            ["port", "*9000*", "$PORT, 8080", "8080"],
+            ["invoke path", "*/  (platform exposes /invocations/)*", "yours", "yours"],
+            ["health", "*GET /ping -> Healthy*", "yours", "yours"],
+            ["architecture", "*ARM64, required*", "any", "amd64"],
+            ["card", "/.well-known/agent-card.json", "same", "same"],
+            ["A2A-Version header", "*dropped*", "forwarded", "forwarded"],
+            ["cold-start unit", "*session -> microVM*", "instance", "revision replica"],
+        ],
+        widths=[0.0, 0.19, 0.50, 0.76],
+    )
+
+
 if __name__ == "__main__":
     print("rendering:")
     stacks()
@@ -481,4 +511,5 @@ if __name__ == "__main__":
     scorers()
     availability()
     tool_use()
+    agentcore_contract()
     print("done.")

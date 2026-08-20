@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
-"""Render the Medium version as a single self-contained HTML proof.
+"""Render a Medium article as HTML -- to read privately, or to feed to Medium.
 
-The Medium article lives in `article-medium-framework.md` and points at nine
-PNGs by relative path, which means it cannot be read anywhere except a checkout.
-This turns it into one file with every image inlined, so the layout can be read
-before anything is pasted into Medium.
+Two modes, because they want opposite things from the images.
 
-**It writes outside the repo by default, and that is deliberate.** A generated
-HTML copy of an article committed beside its markdown is a second document that
-will drift -- this repo has already paid for that once with the runbook. The
-generator is version-controlled; its output is disposable.
+**Default: a self-contained proof.** Every PNG inlined as a data URI, written
+outside the repo. Read it anywhere, share the link, check the layout before
+pasting anything. A generated HTML copy committed beside its markdown is a
+second document that drifts -- this repo has already paid for that once with
+the runbook -- so the generator is version-controlled and its output is not.
 
-    python3 docs/make_preview.py [output.html]
+**`--web`: a page Medium can import.** Images stay as relative `<img src>`
+paths, and the file lands in `docs/` so GitHub Pages serves it alongside
+`docs/img/medium/`. Medium's "Import a story" takes a public URL and pulls the
+text *and* the images, which is the only way to avoid placing every image by
+hand. Data URIs are no good for that -- importers fetch `src` URLs and skip
+inline data -- which is exactly why this mode exists.
+
+    python3 docs/make_preview.py                 # proof of all three, to the scratchpad
+    python3 docs/make_preview.py gde             # just one
+    python3 docs/make_preview.py --web           # importable pages into docs/
 """
 
 import base64
@@ -22,9 +29,9 @@ from pathlib import Path
 import markdown
 
 DOCS = Path(__file__).parent
-SOURCE = DOCS / "article-medium-framework.md"
-DEFAULT_OUT = Path("/tmp/claude-1000/-home-xbill-multicloud-a2a-subagent") \
-    / "6ddb71c6-f02a-46a7-ae5e-9981bdd7eead/scratchpad/medium-proof.html"
+SLUGS = ("framework", "gde", "aws")
+SCRATCH = Path("/tmp/claude-1000/-home-xbill-multicloud-a2a-subagent") \
+    / "6ddb71c6-f02a-46a7-ae5e-9981bdd7eead/scratchpad"
 
 CSS = """
 :root {
@@ -174,8 +181,8 @@ figcaption {
 """
 
 
-def build(out_path: Path) -> Path:
-    text = SOURCE.read_text()
+def build(slug: str, out_path: Path, *, web: bool) -> Path:
+    text = (DOCS / f"article-medium-{slug}.md").read_text()
 
     title = re.search(r"^# (.+)$", text, re.M).group(1)
     standfirst = re.search(r"^### (.+)$", text, re.M).group(1)
@@ -183,36 +190,38 @@ def build(out_path: Path) -> Path:
     text = re.sub(r"^### .+$", "", text, count=1, flags=re.M)
 
     html = markdown.markdown(text, extensions=["fenced_code", "attr_list", "sane_lists"])
-
-    # Inline every image and give it the slug the publishing procedure needs:
-    # its upload position, its filename, and the alt text to paste as a caption.
     count = html.count("<img")
 
-    def inline(match, _n=[0]):
+    def figure(match, _n=[0]):
         _n[0] += 1
         alt, src = match.group("alt"), match.group("src")
-        data = base64.b64encode((DOCS / src).read_bytes()).decode()
+        if web:
+            # A path Medium's fetcher can resolve against the page URL. Pages
+            # serves docs/ at the site root, so this is unchanged from source.
+            source = src
+        else:
+            data = base64.b64encode((DOCS / src).read_bytes()).decode()
+            source = f"data:image/png;base64,{data}"
         return (
-            f'<figure><img src="data:image/png;base64,{data}" alt="{alt}">'
+            f'<figure><img src="{source}" alt="{alt}">'
             f'<figcaption><span class="stamp">{_n[0]:02d}<em>/{count:02d}</em></span>'
             f'<p class="alt"><b>{Path(src).name}</b>{alt}</p></figcaption></figure>'
         )
 
-    html = re.sub(r'<img alt="(?P<alt>[^"]*)" src="(?P<src>[^"]*)"\s*/?>', inline, html)
+    html = re.sub(r'<img alt="(?P<alt>[^"]*)" src="(?P<src>[^"]*)"\s*/?>', figure, html)
     html = html.replace("<p><figure>", "<figure>").replace("</figure></p>", "</figure>")
 
+    slug_line = (
+        f'<span>Medium proof</span><span>docs/article-medium-{slug}.md</span>'
+        f'<span><b>{count} images</b> — tables rendered, captions ready to paste</span>'
+    )
     page = f"""<title>Three Clouds, One Brief</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
 <style>{CSS}</style>
 <div class="sheet">
-  <div class="slug">
-    <span>Medium proof</span>
-    <span>docs/article-medium-framework.md</span>
-    <span><b>{count} images</b> — tables rendered, captions ready to paste</span>
-    <span>not yet uploaded</span>
-  </div>
+  <div class="slug">{slug_line}</div>
   <header class="masthead">
     <h1>{title}</h1>
     <p class="standfirst">{standfirst}</p>
@@ -226,6 +235,10 @@ def build(out_path: Path) -> Path:
 
 
 if __name__ == "__main__":
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_OUT
-    written = build(target)
-    print(f"{written}  ({written.stat().st_size / 1024:.0f} KB)")
+    args = sys.argv[1:]
+    web = "--web" in args
+    slugs = [a for a in args if not a.startswith("-")] or list(SLUGS)
+    for slug in slugs:
+        out = (DOCS / f"medium-{slug}.html") if web else (SCRATCH / f"medium-proof-{slug}.html")
+        written = build(slug, out, web=web)
+        print(f"  {written}  ({written.stat().st_size / 1024:.0f} KB)")
