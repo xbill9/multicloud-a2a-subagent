@@ -525,13 +525,17 @@ python3 -m pytest tests/ -q     # 183 passed with the mesh up, 168 without
 
 ## Deployed
 
-Deployed 2026-08-12, `us-central1`:
+Deployed 2026-08-12, `us-central1`. **The AWS runtime id and the Azure
+hostname below were re-read from the deployed master's env on 2026-08-21**; the
+values recorded here before that date were from an earlier deployment and had
+been wrong since it was replaced. Neither is stable across a redeploy, so treat
+both as facts with a date on them rather than addresses:
 
 ```text
-master   https://research-master-wgcq55zbfq-uc.a.run.app     (private)
+master   https://research-master-wgcq55zbfq-uc.a.run.app     (PUBLIC — see below)
 gcp      https://research-gcp-wgcq55zbfq-uc.a.run.app         (private)
-aws      bedrock-agentcore.us-west-2 / research_aws-HP2I7RDeUm
-azure    research-azure.blackfield-af33f0df.westus2.azurecontainerapps.io
+aws      bedrock-agentcore.us-west-2 / research_aws-Renyp76J4J
+azure    research-azure.yellowflower-388ea418.westus2.azurecontainerapps.io
 
 identity research-coordinator@aisprint-491218.iam.gserviceaccount.com
          sub 104950115965918306019 — pinned in the AWS trust policy and the
@@ -584,11 +588,25 @@ listen on the port defined by PORT=8080"*, naming the one subsystem that was
 fine. Commands have to run through `/cnb/lifecycle/launcher`. Full finding in
 [`docs/INTEROP.md`](docs/INTEROP.md).
 
-**The front end is private.** `--no-allow-unauthenticated`, like everything
-else here, reached through `gcloud run services proxy`. It holds credentials
-for three clouds and is the only surface a person is meant to open, which is
-exactly the combination that gets something made public to try it once.
-`PUBLIC=1` overrides and says so on stderr; `verify` checks the page 403s.
+**The front end is meant to be private, and as deployed it is not.**
+The design is `--no-allow-unauthenticated`, like everything else here, reached
+through `gcloud run services proxy`. It holds credentials for three clouds and
+is the only surface a person is meant to open, which is exactly the combination
+that gets something made public to try it once. `PUBLIC=1` overrides and says
+so on stderr; `verify` checks the page 403s.
+
+That is the design. **Measured 2026-08-21, the deployed `research-master` binds
+`roles/run.invoker` to `allUsers` and answers unauthenticated requests with
+200** — `RESEARCH_PUBLIC=1` is set in the running revision. So the paragraph
+above described an intention, and this file asserted it as a fact for nine
+days. The researcher service is unaffected and still 403s. To close it:
+
+```bash
+gcloud run services remove-iam-policy-binding research-master \
+    --region us-central1 --member=allUsers --role=roles/run.invoker
+gcloud run services update research-master --region us-central1 \
+    --remove-env-vars RESEARCH_PUBLIC
+```
 
 **The audit lives in GCS.** Cloud Run's filesystem does not outlive the
 instance, so `evaluations/` is a bucket mounted at `/eval` and the service is
@@ -732,7 +750,14 @@ run  2026-08-12T23:11:25+00:00  "how agent-to-agent protocols change multi-cloud
    +6643ms  gcp    I research-gcp-wgcq55zbfq-uc.a.run.app/         200     55ms   3.0kB  |                                 #
 
   K credential   D agent-card discovery   I A2A invocation
+```
 
+That transcript was accurate when captured. The Azure hostname and AWS runtime
+id in it are *not* the ones deployed now — both changed when their environments
+were recreated — which is the argument for reading a transcript as a record and
+not as configuration.
+
+```text
   legs summed 9148ms, slowest leg 6060ms, run 6700ms
   -> the legs overlapped: the run cost about the slowest, not the sum.
 ```
@@ -867,17 +892,35 @@ them, and nothing fails when it rots.
 - **The search budget is now shaping the drafts.** Gemini spends all six
   searches in every v3 run, so the ceiling is binding on at least one
   participant and the comparison is partly a comparison of who hits it.
-- **Nobody has opened the front end in a browser.** It is served by a deployed
-  service, its script parses, and every field it reads is asserted in
-  `tests/test_service.py`. That is not the same as it looking right.
+- ~~**Nobody has opened the front end in a browser.**~~ **Done 2026-08-21.**
+  All eight panes — run a brief, last run, live, flow, reviews, wire, review,
+  audit — were opened against the deployed master and render correctly, with an
+  empty console and no failed fetches. What it found was not in the page: two
+  endpoints recorded in this file were stale, and the ingress is open (below).
+  The page itself was the one thing that turned out to be fine.
 - **The deployed timings are single cold runs.** The 6700ms elapsed above is
   one direct-brain sample with cold starts in it, and the 114.3s model run is
   one sample too. The winner changed between two runs of identical canned text
   purely on scheduling noise, which is the clearest possible demonstration that
   these are not latencies. The predecessor series' 18.8–25.1s hosted-runtime
   numbers came from warm repeats. Do not quote these.
+- **The master's ingress is open to the internet, and this file said it was
+  not.** Measured 2026-08-21: `roles/run.invoker` on `research-master` is bound
+  to `allUsers`, and an unauthenticated GET of `/`, `/api/health`, `/api/last`
+  and `/api/audit` returns 200. `RESEARCH_PUBLIC=1` is set in the deployed
+  revision. The GCP researcher is unaffected and still 403s. This is the exact
+  combination the "front end is private" note below warns about — a surface
+  holding credentials for three clouds, made public to try it once — and the
+  `verify` control that would have caught it asserts the page 403s, which is
+  further evidence for the item above about controls not having been re-run.
 - **The audit block above has never been regenerated from the real store.**
 - **The judge sits on one participant's cloud.** See above.
-- **`docs/DEPLOYMENT_PLAN.md` and `docs/ARTICLE_PLAN.md` still describe the
-  currency mesh.** They are accurate about what was deployed and stale about
-  what this repo now is.
+- **`docs/DEPLOYMENT_PLAN.md` and `docs/ARTICLE_PLAN.md` describe the currency
+  mesh**, and always will — they are records of the predecessor. Their banners
+  were rewritten on 2026-08-21 and each now says which parts are still live and
+  cited (the auth mechanisms and control method; the prior-art survey) and where
+  the current state is written down instead. What that rewrite had to fix is the
+  lesson: both banners still claimed the research mesh *had not been deployed*,
+  which was true the day they were written and false from the next day, and they
+  contradicted the status section at the top of this file for nine days. A
+  staleness notice rots exactly like the thing it marks.

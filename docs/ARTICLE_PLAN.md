@@ -1,9 +1,22 @@
 # Article plan
 
-> **Stale as of 2026-08-12.** Plans an article about the currency mesh. The
-> repo has since pivoted to three research agents judged against a rubric, and
-> none of that is deployed, so there is nothing to write up yet. The prior-art
-> survey below still stands.
+> **Superseded as of 2026-08-21. This plans an article about the predecessor
+> currency mesh, and the articles it planned were never the ones written.**
+>
+> What was actually published came from the research mesh instead, and lives in
+> `docs/article-devto-*.md` and `docs/article-medium-*.md` — three pieces split
+> by audience, not the A/B/C split below. `docs/MEDIUM-PUBLISHING.md` is the
+> current process note.
+>
+> **Two things here are still live and cited from elsewhere, which is why this
+> file is kept rather than deleted:** the prior-art survey under "Prior art",
+> referenced by `docs/FOLLOWUP.md`, and the pre-existing `A2A-Version` finding,
+> referenced by `docs/INTEROP.md`. Both still stand.
+>
+> The banner this replaces said the research mesh was not deployed "so there is
+> nothing to write up yet". True when written on 2026-08-12, false from
+> 2026-08-13, and left standing for nine days while it contradicted the README's
+> own status section. A staleness notice rots exactly like the thing it marks.
 
 This repo has findings sets with genuinely different audiences. Splitting them
 keeps each argument tight, and avoids one article where the identity material

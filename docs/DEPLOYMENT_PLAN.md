@@ -1,13 +1,29 @@
 # Deployment plan
 
-> **Stale as of 2026-08-12.** This document describes deploying the
-> currency-conversion mesh, which is what was deployed and revalidated on
-> 2026-08-07/08. The repo now carries three research agents and a judge, and
-> **none of it has been deployed**. The hosting decision, the auth mechanisms
-> and the negative-control method below all still apply unchanged — they are
-> the parts the currency domain was scaffolding for — but every recorded
-> outcome refers to code that no longer exists in this form. Re-running
-> `verify` is overdue. See the status table at the top of the README.
+> **Historical as of 2026-08-21.** This describes deploying the predecessor
+> currency-conversion mesh, revalidated 2026-08-07/08. Every *outcome* recorded
+> below refers to code that no longer exists in this form. Read it as a record,
+> not as instructions.
+>
+> **What is still load-bearing**, and why six comments in `coordinator/` and
+> `infra/` point here: the hosting decision (§1), the auth seam (§2), the
+> per-leg mechanisms and their trust conditions (§3), and the negative-control
+> method (§"What the controls actually proved"). Those are the parts the
+> currency domain was only ever scaffolding for, and they carried over to the
+> research mesh unchanged.
+>
+> **For what is deployed now** — three research agents and a judge, deployed
+> 2026-08-12 and run with models in the path 2026-08-13 — see the status
+> section at the top of `README.md`, and `docs/RUNBOOK.md` for operating it.
+>
+> **The controls are still overdue**, and more narrowly than this banner used to
+> say: they passed on 2026-08-13 and their subject has been redeployed since,
+> so they are currently a claim about a retired image.
+>
+> The banner this replaces said the research mesh had not been deployed at all.
+> True on 2026-08-12, false from 2026-08-13, and left standing for nine days
+> contradicting the README. A staleness notice rots exactly like the thing it
+> marks.
 
 Written when nothing was deployed, and kept in that order because each step's
 output is what made the next one meaningful. **All three legs are now deployed

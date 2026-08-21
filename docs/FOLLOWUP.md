@@ -123,22 +123,34 @@ this deployment.
 *Done when:* the finding is recorded with two independent environments behind
 it, or is explicitly narrowed to the one it was observed in.
 
-### 5. Make deployed consensus non-vacuous
+### 5. ~~Make deployed consensus non-vacuous~~ — superseded 2026-08-12
 
-Every agent reads the same fixture table, so `3/3 clouds, agreed` is true by
-construction. Disagreement is exercised only by fault injection in tests, which
-means the *deployed* consensus result demonstrates nothing about consensus.
+**Consensus is gone.** The median over three currency quotes was replaced by a
+judge ranking three drafts, so there is no `3/3 clouds, agreed` to make
+non-vacuous. See "What replaced the median, and what that cost" in the README.
 
-Give one cloud a genuinely independent rate source — a different provider, or
-live rates on one leg only — so agreement is a measurement rather than an
-identity.
+The *shape* of the problem survived the replacement, which is why this is
+superseded rather than done: in `direct` mode all three agents return identical
+canned text, so a ranking over them is decided by scheduling noise rather than
+by content — vacuous for the same reason, one layer up. The README says so
+under "Not done". The original item is kept below because that argument is the
+one that transfers.
 
-*Buys:* the median is the reason a third cloud exists. Right now the deployed
-mesh never tests it.
-
-*Caveat:* this trades away the property that a red cell is unambiguously a
-protocol failure. It should be a separate, clearly labelled run, not the
-default.
+> Every agent reads the same fixture table, so `3/3 clouds, agreed` is true by
+> construction. Disagreement is exercised only by fault injection in tests,
+> which means the *deployed* consensus result demonstrates nothing about
+> consensus.
+>
+> Give one cloud a genuinely independent rate source — a different provider, or
+> live rates on one leg only — so agreement is a measurement rather than an
+> identity.
+>
+> *Buys:* the median is the reason a third cloud exists. Right now the deployed
+> mesh never tests it.
+>
+> *Caveat:* this trades away the property that a red cell is unambiguously a
+> protocol failure. It should be a separate, clearly labelled run, not the
+> default.
 
 ## Framing changes, which cost nothing
 
