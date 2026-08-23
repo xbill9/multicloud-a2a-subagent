@@ -64,6 +64,18 @@ noted at the bottom.
    two in this piece (the interop matrix and the version-mismatch error) are
    narrow enough not to wrap.
 
+   **Medium's importer flattens every code block.** Measured 2026-08-23 by
+   importing `medium-aws.html` at `medium.com/p/import`: a nine-line
+   Dockerfile arrived as `ENV HOST=0.0.0.0 \ PORT=9000 \
+   RESEARCH_MODEL_MODE=direct EXPOSE 9000 CMD [...]` on one scrolling line,
+   and all fourteen blocks did the same. Emitting `<br>` instead of newlines
+   does not help -- the importer strips those too, measured the same day on a
+   second import. So **after importing, every code block has to be re-pasted
+   by hand** in the Medium editor, where multi-line paste works fine. Prose,
+   headings, links and images all survive the import; the code does not.
+   Untested alternative if this becomes worth automating: a bare `<pre>` with
+   no nested `<code>`, or gist embeds, which Medium renders natively.
+
    **72 columns is the budget.** Anything wider wraps, and a wrapped aligned
    transcript is worse than no transcript. The AWS piece quotes the deployed
    run's timeline, which is 110 columns as captured -- it carries only the AWS
