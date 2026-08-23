@@ -62,6 +62,20 @@ Three things about that flow, each of which cost a wasted import to learn:
   Regenerate in order: `make_gists.py`, then `make_code_images.py`, then
   `make_preview.py --web`.
 
+- **Unresolved: code images drop at article scale.** Table images import
+  every time. The code PNGs import every time *in isolation* -- a probe with
+  four distinct code images plus a table control landed 5 of 5 -- but in the
+  real articles they are silently dropped: the AWS import kept 4 of 11 images
+  and GDE kept 3 of 9, and in both cases the survivors were exactly the table
+  figures. Ruled out by measurement: the figure markup (identical for both, and
+  proven to import), the `/code/` path, the file itself (all 200, `image/png`,
+  25-80KB), the colour mode (RGBA for both), the aspect ratio (3.4:1 imported
+  fine in the probe), and Medium's image cache (a table image never imported
+  before still landed). What is left is scale -- image count, page size or a
+  fetch budget -- and that cannot be distinguished from outside. Until it is,
+  **check the code images after importing** and place any that are missing by
+  hand from `docs/img/medium/code/`.
+
 - **Images need no work at all.** Medium fetches them, rehosts them at 800px
   and takes the `<figcaption>` as the caption. That is the whole of step 2
   below, done automatically.
