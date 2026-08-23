@@ -85,19 +85,25 @@ body {
   font-weight: 600; font-size: 2.6rem; line-height: 1.12;
   letter-spacing: -0.02em; margin: 0 0 22px; text-wrap: balance;
 }
+/* The bottom margin is load-bearing in `--web` mode, where the standfirst is a
+   plain sibling of the body paragraphs and there is no masthead to space it. */
 .standfirst {
-  margin: 0; color: var(--ink-2); font-size: 1.22rem; line-height: 1.5;
+  margin: 0 0 1.9rem; color: var(--ink-2); font-size: 1.22rem; line-height: 1.5;
   font-style: italic;
 }
 
 /* ---- prose ---- */
 article { max-width: 40rem; margin: 0 auto; }
 article > * { margin-inline: auto; }
-article h1, article h2, article h3 {
+article h1, article h2, article h3, article h4 {
   font-family: "IBM Plex Sans", system-ui, sans-serif;
   font-weight: 600; letter-spacing: -0.015em; text-wrap: balance;
 }
 article h2 { font-size: 1.72rem; line-height: 1.2; margin: 3.4rem 0 1.1rem; }
+/* Medium has two heading sizes, so `####` lands on the small one. The AWS
+   piece uses `####` for its sections; sized between h2 and h3 so the preview
+   shows the same hierarchy Medium will. */
+article h4 { font-size: 1.42rem; line-height: 1.25; margin: 3.2rem 0 1rem; }
 article h3 { font-size: 1.18rem; margin: 2.6rem 0 .8rem; }
 article p { margin: 0 0 1.35rem; }
 article ul { margin: 0 0 1.35rem; padding-left: 1.2rem; }
