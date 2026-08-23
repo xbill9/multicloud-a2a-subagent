@@ -205,6 +205,18 @@ figcaption {
 #: mechanism that is actually documented to work.
 GIST_EMBED = '<p><a href="{url}">{url}</a></p>'
 
+#: Alt text for a cover, stated in words like every other figure's -- a cover
+#: is the one image a screen reader meets before any prose has framed it.
+COVER_ALT = {
+    "framework": (
+        "One agent, three clouds, one protocol. Three columns sharing a single "
+        "A2A v1.0 line: Google runs an ADK LlmAgent on gemini-2.5-flash on Cloud "
+        "Run, AWS runs a Strands Agent on nova-micro on Bedrock AgentCore, and "
+        "Azure runs an Agent Framework Agent on gpt-5-mini on Container Apps. All "
+        "three share the same brief, the same instruction, the same search tool "
+        "and the same rubric"),
+}
+
 
 def gistify(text: str, slug: str) -> str:
     """Swap each multi-line fenced block for its gist link.
@@ -277,6 +289,16 @@ def build(slug: str, out_path: Path, *, web: bool) -> Path:
         return f'<figure><img src="{source}" alt="{alt}">{caption}</figure>'
 
     html = re.sub(r'<img alt="(?P<alt>[^"]*)" src="(?P<src>[^"]*)"\s*/?>', figure, html)
+
+    # A cover, if one has been drawn for this article. Medium takes the first
+    # image in the body as the story's cover, so it has to lead the body rather
+    # than only sit in og:image -- and being first also makes it the og:image
+    # by the rule above.
+    cover = DOCS / "img" / "medium" / f"00-cover-{slug}.png"
+    if web and cover.exists():
+        first_image = f"{SITE}/img/medium/{cover.name}"
+        html = (f'<figure><img src="{first_image}" alt="{COVER_ALT[slug]}">'
+                f'<figcaption>{COVER_ALT[slug]}</figcaption></figure>\n') + html
     html = html.replace("<p><figure>", "<figure>").replace("</figure></p>", "</figure>")
 
     head_extra = ""
