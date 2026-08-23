@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Three Clouds, One Brief: What Actually Differs Between ADK, Strands and Agent Framework</title>
+<title>Mix and Match: One Agent, Three Clouds, One Protocol</title>
 <meta name="description" content="The same research agent built three times — ADK on Cloud Run, Strands on Bedrock AgentCore, Agent Framework on Container Apps — and what only shows up once you hold everything else still">
 <meta property="og:type" content="article">
-<meta property="og:title" content="Three Clouds, One Brief: What Actually Differs Between ADK, Strands and Agent Framework">
+<meta property="og:title" content="Mix and Match: One Agent, Three Clouds, One Protocol">
 <meta property="og:description" content="The same research agent built three times — ADK on Cloud Run, Strands on Bedrock AgentCore, Agent Framework on Container Apps — and what only shows up once you hold everything else still">
 <meta property="og:image" content="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/01-three-stacks.png">
 <link rel="canonical" href="https://xbill9.github.io/multicloud-a2a-subagent/medium-framework.html">
@@ -171,31 +171,42 @@ article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-w
 </head>
 <body>
 <article class="sheet">
-  <h1>Three Clouds, One Brief: What Actually Differs Between ADK, Strands and Agent Framework</h1>
+  <h1>Mix and Match: One Agent, Three Clouds, One Protocol</h1>
   <p class="standfirst">The same research agent built three times — ADK on Cloud Run, Strands on Bedrock AgentCore, Agent Framework on Container Apps — and what only shows up once you hold everything else still</p>
-  <p>All three hyperscalers now ship an agent framework, and all three speak A2A. The protocol page will tell you that is the interoperability story finished:</p>
+  <p>This article provides a step by step comparison of the same research agent built three times, on Google ADK, AWS Strands and Microsoft Agent Framework, all three speaking A2A to one coordinator.</p>
+<p>The code is here:</p>
+<p><a href="https://github.com/xbill9/multicloud-a2a-subagent">github.com/xbill9/multicloud-a2a-subagent</a></p>
+<h4>What is this project trying to Do?</h4>
+<p>This project aims to find out what actually differs between the three hyperscalers' agent frameworks once the protocol between them already works.</p>
+<p>All three now ship an agent framework, and all three speak A2A. The protocol page will tell you that is the interoperability story finished:</p>
 <blockquote>
-<p><strong>In a world where agents are built using diverse frameworks and by different
+<p>In a world where agents are built using diverse frameworks and by different
 vendors, A2A provides the definitive common language for agent
-interoperability.</strong></p>
+interoperability.</p>
 <p>— <a href="https://a2a-protocol.org/latest/">a2a-protocol.org</a></p>
 </blockquote>
-<p>That is true on the wire, and the wire is not the whole job. So I built the same agent three times — one research agent, one instruction, one search tool, one word budget — on Google ADK, on AWS Strands and on Microsoft Agent Framework, hosted on each vendor's own runtime, and had one coordinator fan the same brief out to all three and score what came back.</p>
+<p>That is true on the wire, and the wire is not the whole job.</p>
+<h4>What is A2A</h4>
+<p>A2A (Agent2Agent) is an open protocol for agents built by different teams, on different frameworks, to call each other. An agent publishes a card at <code>/.well-known/agent-card.json</code> describing what it does and how to reach it, and speaks JSON-RPC over HTTP. This project runs A2A v1.0.</p>
+<p>More details are available here:</p>
+<p><a href="https://a2a-protocol.org/">Agent2Agent (A2A) Protocol</a></p>
+<h3>The Three Stacks</h3>
+<p>One research agent, one instruction, one search tool, one word budget — built three times and hosted on each vendor's own runtime:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/01-three-stacks.png" alt="The three stacks: Google runs an ADK LlmAgent on gemini-2.5-flash, served by to_a2a() on Cloud Run in us-central1, an in-cloud hop; AWS runs a Strands Agent on nova-micro, served by a2a-sdk routes on Bedrock AgentCore in us-west-2, cross-cloud; Azure runs an Agent Framework Agent on gpt-5-mini on Foundry, served by A2AExecutor on Container Apps in westus2, cross-cloud"><figcaption>The three stacks: Google runs an ADK LlmAgent on gemini-2.5-flash, served by to_a2a() on Cloud Run in us-central1, an in-cloud hop; AWS runs a Strands Agent on nova-micro, served by a2a-sdk routes on Bedrock AgentCore in us-west-2, cross-cloud; Azure runs an Agent Framework Agent on gpt-5-mini on Foundry, served by A2AExecutor on Container Apps in westus2, cross-cloud</figcaption></figure>
-<p>The code is all here: <a href="https://github.com/xbill9/multicloud-a2a-subagent">github.com/xbill9/multicloud-a2a-subagent</a>.</p>
-<p>Nothing below is about A2A being broken. A2A worked. This is about the nine other things that differ once it does — and about the two questions worth separating, which almost nobody separates: <strong>what differs because of the platform</strong>, and <strong>what differs because of the model</strong>.</p>
-<hr />
-<h2>What actually has to be the same</h2>
+<p>One coordinator fans the same brief out to all three and scores what comes back.</p>
+<p>Nothing below is about A2A being broken. A2A worked. This is about the nine other things that differ once it does — and about the two questions worth separating, which almost nobody separates. What differs because of the platform, and what differs because of the model.</p>
+<h4>What Actually Has to be the Same</h4>
 <p>The first version of this was a demo: three agents, three SDKs, three green ticks. It told me nothing. When three columns differ in nine ways, you cannot attribute any result to any of them.</p>
-<p>So the rule became one line: <strong>share everything that is not the variable under test.</strong></p>
+<p>So the rule became one line. Share everything that is not the variable under test:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/02-held-constant.png" alt="What is shared versus what differs. Shared, exactly one implementation: the brief and its focus questions, the versioned instruction, the search tool and its six-call budget, the versioned scoring rubric, the wire format of markdown plus one stamped header, and the failure taxonomy. Different on purpose: the agent framework, the model, the serving stack, the hosting platform, the credential mechanism, and the tool-binding API"><figcaption>What is shared versus what differs. Shared, exactly one implementation: the brief and its focus questions, the versioned instruction, the search tool and its six-call budget, the versioned scoring rubric, the wire format of markdown plus one stamped header, and the failure taxonomy. Different on purpose: the agent framework, the model, the serving stack, the hosting platform, the credential mechanism, and the tool-binding API</figcaption></figure>
 <p>The right column is the article. The left column is what makes it evidence instead of an anecdote.</p>
-<p>The one people argue with is the search tool. <strong>I gave all three clouds the same search function rather than each vendor's own</strong>, and it is the decision I would defend hardest. Only Google ships a ready search tool. Microsoft's Agent Framework exports <code>SupportsWebSearchTool</code>, which is a protocol a chat client may declare — not a tool you can hand an agent — and Foundry's own grounding wants a Bing resource connection created out of band. Strands bundles none at all. "Native search everywhere" would have meant Gemini grounded against Google's index, a Foundry model against Bing, and Bedrock against nothing: three retrieval products, and a comparison that reports the gap between <em>them</em> as a gap between models.</p>
-<p>What is still native is the part I wanted to see anyway — how each framework binds and drives a tool. That part is now the only part that varies.</p>
-<hr />
-<h2>Three frameworks, three shapes for the same agent</h2>
+<p>The one people argue with is the search tool. I gave all three clouds the same search function rather than each vendor's own, and it is the decision I would defend hardest.</p>
+<p>Only Google ships a ready search tool. Microsoft's Agent Framework exports <code>SupportsWebSearchTool</code>, which is a protocol a chat client may declare rather than a tool you can hand an agent, and Foundry's own grounding wants a Bing resource connection created out of band. Strands bundles none at all.</p>
+<p>"Native search everywhere" would have meant Gemini grounded against Google's index, a Foundry model against Bing, and Bedrock against nothing. Three retrieval products, and a comparison that reports the gap between them as a gap between models.</p>
+<p>What is still native is the part worth seeing anyway — how each framework binds and drives a tool. That part is now the only part that varies.</p>
+<h4>Three Frameworks, Three Shapes</h4>
 <p>Here is the entire model-side construction on each cloud. Not excerpts — this is all of it.</p>
-<p><strong>Google, ADK:</strong></p>
+<p>Google, ADK:</p>
 <pre><code class="language-python">from google.adk.agents import LlmAgent
 
 LlmAgent(
@@ -205,17 +216,17 @@ LlmAgent(
     tools=[web_search],                # a plain callable
 )
 </code></pre>
-<p><strong>AWS, Strands:</strong></p>
+<p>AWS, Strands:</p>
 <pre><code class="language-python">from strands import Agent, tool
 from strands.models import BedrockModel
 
 Agent(
-    model=BedrockModel(model_id=&quot;us.amazon.nova-micro-v1:0&quot;),   # a model *object*
-    system_prompt=INSTRUCTION,                                  # `system_prompt`
-    tools=[tool(web_search)],                                   # explicitly decorated
+    model=BedrockModel(model_id=&quot;us.amazon.nova-micro-v1:0&quot;),
+    system_prompt=INSTRUCTION,         # `system_prompt`
+    tools=[tool(web_search)],          # explicitly decorated
 )
 </code></pre>
-<p><strong>Azure, Agent Framework:</strong></p>
+<p>Azure, Agent Framework:</p>
 <pre><code class="language-python">from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
 from azure.identity import DefaultAzureCredential
@@ -231,125 +242,121 @@ Agent(
     default_options={&quot;store&quot;: False},
 )
 </code></pre>
-<p>Three names for the system prompt. Three levels at which the model is named: a string, a model object, a client holding an endpoint and a credential. Three tool conventions — ADK wraps the plain callable itself, Strands wants an explicit <code>@tool</code>, Agent Framework takes the callable and runs it through its own function machinery.</p>
-<p>None of that is hard. All of it is <strong>untranslatable</strong>. There is no adapter that turns these into one object, and every hour I have seen spent trying to build one produced a fourth thing to maintain that then became what was actually under test. Share the prompt, the tool and the wire format. Do not try to share the agent.</p>
-<hr />
-<h2>Two of the three give you nowhere to stand</h2>
+<p>Three names for the system prompt. Three levels at which the model is named: a string, a model object, a client holding an endpoint and a credential. Three tool conventions.</p>
+<p>None of that is hard. All of it is untranslatable.</p>
+<p>There is no adapter that turns these into one object, and every hour I have seen spent trying to build one produced a fourth thing to maintain that then became what was actually under test. Share the prompt, the tool and the wire format. Do not try to share the agent.</p>
+<h4>Two of the Three Give You Nowhere to Stand</h4>
 <p>Strands hands you a function. Everything else can wrap it from outside:</p>
 <pre><code class="language-python">async def respond(prompt: str) -&gt; str:
     return str(await agent.invoke_async(prompt))
 </code></pre>
-<p>ADK and Agent Framework do not. <strong><code>to_a2a()</code> takes an agent and serialises its event stream</strong>, and Agent Framework's <code>A2AExecutor</code> calls the agent too. Neither gives you an <code>(prompt) -&gt; reply</code> boundary, so anything you need to do between the model and the wire has to be done inside that framework's own object model — a <code>BaseAgent</code> wrapping the first agent on one cloud, a delegating class implementing <code>run</code> on the other.</p>
+<p>ADK and Agent Framework do not. <code>to_a2a()</code> takes an agent and serialises its event stream, and Agent Framework's <code>A2AExecutor</code> calls the agent too. Neither gives you a <code>(prompt) -&gt; reply</code> boundary, so anything you need to do between the model and the wire has to be done inside that framework's own object model.</p>
 <p>This is not a style complaint. It decides where a fact can be recorded. Every draft in this system carries one line:</p>
-<pre><code class="language-text">&lt;!-- a2a-research agent=gcp model=gemini-2.5-flash brain=llm --&gt;
+<pre><code class="language-plaintext">&lt;!-- a2a-research agent=gcp model=gemini-2.5-flash brain=llm --&gt;
 </code></pre>
-<p>That line is written by the <strong>server</strong>, never by the model. It carries the two things the coordinator cannot reconstruct from its own side of the wire — which model actually answered, and whether a model answered at all. Ask the model to emit its own metadata and a model that gets it wrong misattributes a draft in the audit, which is the one error an audit cannot detect from the inside.</p>
-<p><strong>And on ADK that wrapper became load-bearing the moment I added a tool.</strong> The first version concatenated the text of every event in the stream, which was correct while the stream held exactly one event. With <code>web_search</code> attached the stream also carries the model's commentary around each tool call — "Let me look that up", a summary of what it found — and concatenating those produces a draft that opens with the model narrating its own research. The scorer downstream then grades the narration. Keep only <code>event.is_final_response()</code>.</p>
-<hr />
-<h2>A completed task does not mean you got the answer</h2>
-<p>ADK and Agent Framework both return a <code>Task</code> in <code>TASK_STATE_COMPLETED</code>. Both are spec-conformant. They disagree about where the reply goes:</p>
-<ul>
-<li><strong>ADK</strong> attaches it as an <strong>artifact</strong> — and also leaves a copy in history.</li>
-<li><strong>Agent Framework's <code>A2AExecutor</code></strong> drives the full lifecycle (<code>submit</code> → <code>start_work</code> → <code>complete</code>) and leaves the reply as a <code>ROLE_AGENT</code> message in <strong>history</strong>, with <code>artifacts</code> empty.</li>
-<li><strong>The <code>a2a-sdk</code> reference executor</strong>, which is what my AWS agent sits on, enqueues a single <code>Message</code> and runs no task lifecycle at all.</li>
-</ul>
-<p>So the obvious client — read <code>task.artifacts</code> — works perfectly against Google and returns an <strong>empty string</strong> against Microsoft. Not an error. Not a timeout. A successful call with no content, which then fails somewhere downstream as a parse error pointing at the wrong layer.</p>
+<p>That line is written by the server, never by the model. It carries the two things the coordinator cannot reconstruct from its own side of the wire — which model actually answered, and whether a model answered at all. Ask the model to emit its own metadata and a model that gets it wrong misattributes a draft in the audit, which is the one error an audit cannot detect from the inside.</p>
+<p>Note- on ADK that wrapper became load-bearing the moment I added a tool. The first version concatenated the text of every event in the stream, which was correct while the stream held exactly one event. With <code>web_search</code> attached the stream also carries the model's commentary around each tool call, and concatenating those produces a draft that opens with the model narrating its own research. Keep only <code>event.is_final_response()</code>.</p>
+<h4>A Completed Task is Not The Answer</h4>
+<p>ADK and Agent Framework both return a <code>Task</code> in <code>TASK_STATE_COMPLETED</code>. Both are spec-conformant. They disagree about where the reply goes.</p>
+<p>ADK attaches it as an artifact — and also leaves a copy in history. Agent Framework's <code>A2AExecutor</code> drives the full lifecycle and leaves the reply as a <code>ROLE_AGENT</code> message in history, with <code>artifacts</code> empty. The <code>a2a-sdk</code> reference executor, which is what the AWS agent sits on, enqueues a single <code>Message</code> and runs no task lifecycle at all.</p>
+<p>So the obvious client — read <code>task.artifacts</code> — works perfectly against Google and returns an empty string against Microsoft. Not an error. Not a timeout. A successful call with no content, which then fails somewhere downstream as a parse error pointing at the wrong layer.</p>
 <p>Read every carrier the spec allows and you get the mirror-image bug: ADK's reply arrives twice, once per envelope.</p>
-<p>That one is worth dwelling on, because of <em>how</em> it stayed hidden. In the predecessor version of this project the agents returned an exchange rate, and the parser indexed quotes by target currency — so a duplicate object quietly overwrote its twin and the answer was correct. Change the domain to a written draft and the body doubles, the word count doubles, and the scorer marks a compliant draft as a 100% length overrun.</p>
-<p>I found it by reading output: one cloud returned 202 words of text the other two returned in 98. <strong>No test caught it, and the suite was green throughout.</strong> There is now a live test asserting all three serving stacks return the same canned text at the same length, which is the cheapest detector I know for the whole class.</p>
-<p>"The call succeeded" and "you received the answer" are different claims in A2A. A client written against one vendor's server will pass that vendor's tests while silently dropping another vendor's replies.</p>
-<hr />
-<h2>The agent card advertises an address you cannot dial</h2>
-<p><code>to_a2a(agent, host, port)</code> writes the <strong>bind</strong> address straight into the card:</p>
+<p>That one is worth dwelling on, because of how it stayed hidden. In the predecessor version of this project the agents returned an exchange rate, and the parser indexed quotes by target currency — so a duplicate object quietly overwrote its twin and the answer was correct. Change the domain to a written draft and the body doubles, the word count doubles, and the scorer marks a compliant draft as a 100% length overrun.</p>
+<p>I found it by reading output: one cloud returned 202 words of text the other two returned in 98.</p>
+<p>Note- no test caught it, and the suite was green throughout. There is now a live test asserting all three serving stacks return the same canned text at the same length, which is the cheapest detector I know for the whole class.</p>
+<p>"The call succeeded" and "you received the answer" are different claims in A2A.</p>
+<h4>The Agent Card Advertises an Address You Cannot Dial</h4>
+<p><code>to_a2a(agent, host, port)</code> writes the bind address straight into the card:</p>
 <pre><code class="language-console">$ curl -s https://&lt;the-adk-agent&gt;.run.app/.well-known/agent-card.json
+
 {&quot;url&quot;: null,
- &quot;additionalInterfaces&quot;: [{&quot;url&quot;: &quot;http://0.0.0.0:8080&quot;, &quot;protocolBinding&quot;: &quot;JSONRPC&quot;}]}
+ &quot;additionalInterfaces&quot;: [
+   {&quot;url&quot;: &quot;http://0.0.0.0:8080&quot;, &quot;protocolBinding&quot;: &quot;JSONRPC&quot;}
+ ]}
 </code></pre>
-<p>A public HTTPS endpoint advertising unroutable plaintext. My AWS and Azure agents take a <code>PUBLIC_URL</code> and advertise that — the behaviour ADK is missing, not anything clever.</p>
-<p><strong>It cannot reproduce locally</strong>, because on a laptop the bind address and the dial address are the same string. It needs a deployment, which is exactly how it survives into one.</p>
+<p>A public HTTPS endpoint advertising unroutable plaintext. The AWS and Azure agents take a <code>PUBLIC_URL</code> and advertise that — the behaviour ADK is missing, not anything clever.</p>
+<p>Note- it cannot reproduce locally, because on a laptop the bind address and the dial address are the same string. It needs a deployment, which is exactly how it survives into one.</p>
 <p>Which clients survive it is the opposite of what the ergonomics would predict:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/03-bad-card.png" alt="Which client survives a card advertising 0.0.0.0:8080. The a2a-sdk client is ok because it rewrites the interfaces after card resolution. The agent-framework A2AAgent is ok because it never routes by card, so a bad card is inert. Google ADK's own RemoteA2aAgent fails, because it routes by card and dials 0.0.0.0:8080"><figcaption>Which client survives a card advertising 0.0.0.0:8080. The a2a-sdk client is ok because it rewrites the interfaces after card resolution. The agent-framework A2AAgent is ok because it never routes by card, so a bad card is inert. Google ADK's own RemoteA2aAgent fails, because it routes by card and dials 0.0.0.0:8080</figcaption></figure>
-<p><strong>ADK's own client cannot reach ADK's own server once hosted.</strong> Both halves ship green in Google's own tests, because locally the two addresses are identical. And the stack that has no seam to patch a resolved card is the one that never needed it, because it dials the URL you constructed it with.</p>
-<p>Then the failure is reported at the wrong layer. Having dialled <code>0.0.0.0:8080</code> and failed, <code>RemoteA2aAgent</code> raises this:</p>
-<pre><code class="language-text">AttributeError: 'A2AClientError' object has no attribute 'status_code'
+<p>ADK's own client cannot reach ADK's own server once hosted. Both halves ship green in Google's own tests, because locally the two addresses are identical. And the stack that has no seam to patch a resolved card is the one that never needed it, because it dials the URL you constructed it with.</p>
+<p>Then the failure is reported at the wrong layer:</p>
+<pre><code class="language-plaintext">AttributeError: 'A2AClientError' object has no attribute 'status_code'
 </code></pre>
 <p>The error handler assumes any <code>A2AClientError</code> carries a status code, which a transport failure does not. The real cause — <code>All connection attempts failed</code> — lands on a separate log line. Two defects compounding: the first sends the client to an unroutable address, the second deletes the evidence of where it went.</p>
-<hr />
-<h2>The platform edits your request</h2>
+<h4>The Platform Edits Your Request</h4>
 <p>The runtime is not a deployment detail either. Each imposes a contract on the container, and they do not agree:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/04-platform-contracts.png" alt="The three runtime contracts. Cloud Run: port $PORT 8080, your own invoke path and health route, any architecture, source buildpack build, one deploy flag for ingress auth, cold starts per instance, A2A-Version header forwarded. AgentCore Runtime: port 9000, invoke path slash with the platform exposing /invocations/, health is GET /ping returning Healthy, ARM64 required, image build, IAM plus CUSTOM_JWT, cold starts per session as a microVM, and the A2A-Version header is dropped. Container Apps: port 8080, your own paths, amd64, image build, ingress auth is a separate deploy step, cold starts per revision replica, header forwarded"><figcaption>The three runtime contracts. Cloud Run: port $PORT 8080, your own invoke path and health route, any architecture, source buildpack build, one deploy flag for ingress auth, cold starts per instance, A2A-Version header forwarded. AgentCore Runtime: port 9000, invoke path slash with the platform exposing /invocations/, health is GET /ping returning Healthy, ARM64 required, image build, IAM plus CUSTOM_JWT, cold starts per session as a microVM, and the A2A-Version header is dropped. Container Apps: port 8080, your own paths, amd64, image build, ingress auth is a separate deploy step, cold starts per revision replica, header forwarded</figcaption></figure>
-<p>Three of those rows cost me real time.</p>
-<p><strong>AgentCore does not forward the <code>A2A-Version</code> header.</strong> <code>a2a-sdk</code> reads the protocol version from that header and, when it is <em>absent</em>, assumes <code>0.3</code> — then rejects the request its own handler cannot serve:</p>
-<pre><code class="language-text">A2A version '0.3' is not supported by this handler. Expected version '1.0'.
+<p>Three of those rows cost real time.</p>
+<p><strong>AgentCore does not forward the <code>A2A-Version</code> header.</strong> <code>a2a-sdk</code> reads the protocol version from that header and, when it is absent, assumes <code>0.3</code> — then rejects the request its own handler cannot serve:</p>
+<pre><code class="language-plaintext">A2A version '0.3' is not supported by this handler. Expected version '1.0'.
 </code></pre>
-<p>Cloud Run and Container Apps pass it through untouched. So the same client, the same <code>a2a-sdk</code> on both ends, the same server code, and the third cloud fails with an error that blames the protocol version and names nothing about the platform that removed it. The fix is to assume the current version when the header is missing, and only when it is missing — a header that <em>says</em> <code>0.3</code> is a real client statement and should still be rejected. <strong>Absent is not evidence of an old client. It is no evidence at all.</strong></p>
-<p>It had also been latent for a week. The deployed image predated the version check, so that leg had been green for a reason that stopped being true the moment I rebuilt it.</p>
-<p><strong>An AgentCore session gets its own microVM.</strong> I was minting a fresh session id per call, so every call paid for a microVM start. It presented as a fixed per-client cost until I noticed the slow cell <em>moved between clients</em> — and a fixed per-client cost cannot move. Something per-call can:</p>
+<p>Cloud Run and Container Apps pass it through untouched. So the same client, the same <code>a2a-sdk</code> on both ends, the same server code, and the third cloud fails with an error that blames the protocol version and names nothing about the platform that removed it.</p>
+<p>The fix is to assume the current version when the header is missing, and only when it is missing. A header that says <code>0.3</code> is a real client statement and should still be rejected. Absent is not evidence of an old client. It is no evidence at all.</p>
+<p><strong>An AgentCore session gets its own microVM.</strong> I was minting a fresh session id per call, so every call paid for a microVM start. It presented as a fixed per-client cost until the slow cell moved between clients — and a fixed per-client cost cannot move. Something per-call can:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/05-session-cold-start.png" alt="AgentCore session cold starts. With a fresh session id per call, the default, five runs measured 5926 to 6037 milliseconds. With the session id pinned, two runs measured 704 to 710 milliseconds. It presented as a fixed per-client cost until the slow cell moved between clients, and a fixed cost cannot move"><figcaption>AgentCore session cold starts. With a fresh session id per call, the default, five runs measured 5926 to 6037 milliseconds. With the session id pinned, two runs measured 704 to 710 milliseconds. It presented as a fixed per-client cost until the slow cell moved between clients, and a fixed cost cannot move</figcaption></figure>
 <p>Pin the session id unless you actually want per-call isolation. There is no equivalent knob on the other two clouds, and this cost is invisible in any per-leg average.</p>
-<p><strong>Container Apps splits "who may get a token" from "who must present one."</strong> One deploy step creates the federated credential; a <em>separate</em> step enforces identity on the ingress. Ship only the first and the leg reports its auth mode happily while answering anybody who asks.</p>
-<p>That is not hypothetical. On 2026-08-13 the negative control for that leg answered <strong>without a credential</strong>, and a direct check confirmed <code>/health</code>, the agent card <em>and</em> the JSON-RPC invoke endpoint all returned 200 to an anonymous caller — on an agent that invokes a billable model. Every other signal in the project was green at the time, which is the entire argument for having negative controls at all.</p>
-<hr />
-<h2>Calling them is three different jobs</h2>
-<p>The framework difference exists on the client side too, and it decides what you are able to fix:</p>
-<ul>
-<li><strong><code>agent-framework</code> <code>A2AAgent</code></strong> — build from a URL, <code>await .run(prompt)</code>, read <code>.text</code>. Two lines. Card resolution and transport are internal, which is ergonomic right up to the moment a server advertises a bad card.</li>
-<li><strong><code>a2a-sdk</code></strong> — resolve the card, mutate it, build a client, iterate typed chunks, close it. Verbose, and the only one low-level enough to work around the card defect above.</li>
-<li><strong><code>google-adk</code> <code>RemoteA2aAgent</code></strong> — a <code>BaseAgent</code> meant to live inside an agent tree. Using it as a plain client means standing up a <code>Runner</code>, a session service and a session, per request. <strong>The ADK stack assumes A2A is something an agent does, not something a program does.</strong></li>
-</ul>
+<p><strong>Container Apps splits "who may get a token" from "who must present one."</strong> One deploy step creates the federated credential; a separate step enforces identity on the ingress. Ship only the first and the leg reports its auth mode happily while answering anybody who asks.</p>
+<p>That is not hypothetical. On 2026-08-13 the negative control for that leg answered without a credential, and a direct check confirmed <code>/health</code>, the agent card and the JSON-RPC invoke endpoint all returned 200 to an anonymous caller — on an agent that invokes a billable model. Every other signal in the project was green at the time, which is the entire argument for having negative controls at all.</p>
+<h4>Calling Them is Three Different Jobs</h4>
+<p>The framework difference exists on the client side too, and it decides what you are able to fix.</p>
+<p><code>agent-framework</code> <code>A2AAgent</code> — build from a URL, <code>await .run(prompt)</code>, read <code>.text</code>. Two lines. Card resolution and transport are internal, which is ergonomic right up to the moment a server advertises a bad card.</p>
+<p><code>a2a-sdk</code> — resolve the card, mutate it, build a client, iterate typed chunks, close it. Verbose, and the only one low-level enough to work around the card defect above.</p>
+<p><code>google-adk</code> <code>RemoteA2aAgent</code> — a <code>BaseAgent</code> meant to live inside an agent tree. Using it as a plain client means standing up a <code>Runner</code>, a session service and a session, per request. The ADK stack assumes A2A is something an agent does, not something a program does.</p>
 <p>Every client against every server, local and with no model in the path:</p>
-<pre><code class="language-console">A2A interop matrix  (the A2A protocol and why agents need one (&lt;=300w), brain=direct)
+<pre><code class="language-console">$ python3 -m matrix.runner
 
-client \ server  gcp               aws               azure
------------------------------------------------------------------------
-a2a-sdk          ok 134ms          ok 8ms            ok 8ms
-agent-framework  ok 129ms          ok 7ms            ok 8ms
-google-adk       ok 920ms          ok 9ms            ok 10ms
+client \ server  gcp          aws          azure
+-------------------------------------------------
+a2a-sdk          ok 134ms     ok 8ms       ok 8ms
+agent-framework  ok 129ms     ok 7ms       ok 8ms
+google-adk       ok 920ms     ok 9ms       ok 10ms
 
 9/9 attempted cells succeeded
 </code></pre>
-<p>Read that as an ordering and nothing more — single runs on loopback. And read it with the honest dependency in front of you: all three client stacks resolve to the same <code>a2a-sdk</code> wire implementation underneath, and two of my three servers share serving scaffolding. <strong>Nine cells is a presentation, not nine independent experiments</strong> — which is what makes the failures above interesting. Shared implementation on both ends should have made all of this trivial.</p>
-<hr />
-<h2>The models differ mostly where a rubric cannot see</h2>
+<p>Read that as an ordering and nothing more — single runs on loopback. And read it with the honest dependency in front of you: all three client stacks resolve to the same <code>a2a-sdk</code> wire implementation underneath, and two of the three servers share serving scaffolding.</p>
+<p>Note- nine cells is a presentation, not nine independent experiments. Which is what makes the failures above interesting. Shared implementation on both ends should have made all of this trivial.</p>
+<h4>The Models Differ Where a Rubric Cannot See</h4>
 <p>Now hold the frameworks still and look at the other axis. Three models, chosen to be unmatched — the heterogeneity is the point, not a confound:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/06-three-models.png" alt="Three deliberately unmatched models. gemini-2.5-flash is a fast general model reached through ADK to Vertex, and is the ADK path's default. nova-micro is small and cheap, reached through Strands to Bedrock, inherited from a two-field lookup task and a poor default for prose. gpt-5-mini is a reasoning deployment reached through Agent Framework to Foundry, forced because store=False needs encrypted reasoning content"><figcaption>Three deliberately unmatched models. gemini-2.5-flash is a fast general model reached through ADK to Vertex, and is the ADK path's default. nova-micro is small and cheap, reached through Strands to Bedrock, inherited from a two-field lookup task and a poor default for prose. gpt-5-mini is a reasoning deployment reached through Agent Framework to Foundry, forced because store=False needs encrypted reasoning content</figcaption></figure>
-<p>That last cell is my favourite example of a model choice that is not a preference. <code>FoundryChatClient</code> speaks the OpenAI Responses API. Passing <code>store=False</code> to keep anything from being stored server-side makes the framework request <code>reasoning.encrypted_content</code>, and <code>gpt-4.1-mini</code> rejects that outright — only a reasoning model accepts it. The region is forced too: the Container App lives in westus2, which offers no Azure OpenAI models, so the call crosses to westus3. <strong>Two constraints that have nothing to do with writing quality decide both the model and the latency on that leg.</strong></p>
-<p>Twenty-four briefs, each answered by all three, scored twice — once by a deterministic rubric, once by re-ranking the same stored drafts with a model judge:</p>
+<p>That last cell is my favourite example of a model choice that is not a preference. <code>FoundryChatClient</code> speaks the OpenAI Responses API. Passing <code>store=False</code> to keep anything from being stored server-side makes the framework request <code>reasoning.encrypted_content</code>, and <code>gpt-4.1-mini</code> rejects that outright — only a reasoning model accepts it.</p>
+<p>The region is forced too: the Container App lives in westus2, which offers no Azure OpenAI models, so the call crosses to westus3. Two constraints that have nothing to do with writing quality decide both the model and the latency on that leg.</p>
+<p>Twenty-four briefs, each answered by all three, scored twice. Once by a deterministic rubric, once by re-ranking the same stored drafts with a model judge:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/07-scorer-changes-the-answer.png" alt="Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge"><figcaption>Win rate and regret under two scorers, 24 briefs. Azure's gpt-5-mini wins 43 percent under the rubric and 87 percent under the model judge, with regret 0.97 and 0.52. GCP's gemini-2.5-flash wins 43 percent under both, with regret 1.54 and 2.21. AWS's nova-micro wins 33 percent under the rubric and none at all under the model judge, with regret 1.32 rubric and 9.38 under the model judge</figcaption></figure>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/08-availability.png" alt="Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one"><figcaption>Availability across the same 24 briefs, identical under both scorers: aws/nova-micro 100 percent, azure/gpt-5-mini 96 percent, gcp/gemini-2.5-flash 58 percent. The failure recorded against the 58 percent leg is a Vertex 429, so quota is the documented cause rather than a proven one</figcaption></figure>
 <p>Four things fall out of that, and only one of them is about writing.</p>
-<p><strong>Availability moved more than eloquence did.</strong> Gemini answered 58% of the briefs it was invited to — the lowest of the three, on the one leg that never leaves its own cloud and is otherwise the most reliable path in the mesh. The failure recorded against it is a Vertex <code>429</code>, so quota is the documented cause rather than a proven one; I have not attributed the ten missing drafts individually. Either way, a rate limit is a vendor difference no essay-scoring rubric will ever capture, and on this corpus it dominates.</p>
-<p><strong>The scorer changes which model looks good, and by a lot.</strong> The rubric puts Nova 1.32 points behind the panel's best; the model judge puts it <strong>9.38</strong> behind. A small cheap model asked to write prose plausibly <em>is</em> much further behind than a form-counting rubric can see. Under the rubric no model dominates; under the model judge <code>gpt-5-mini</code> takes 87% and Nova takes none. So best-of-breed is currently a property of the scorer, not of the models — and the model judge here is Gemini, ranking the Gemini participant at 43% while putting Azure at 87%, which weakens the obvious vendor-bias objection without removing it.</p>
+<p><strong>Availability moved more than eloquence did.</strong> Gemini answered 58% of the briefs it was invited to — the lowest of the three, on the one leg that never leaves its own cloud. The failure recorded against it is a Vertex <code>429</code>, so quota is the documented cause rather than a proven one. Either way, a rate limit is a vendor difference no essay-scoring rubric will ever capture, and on this corpus it dominates.</p>
+<p><strong>The scorer changes which model looks good, and by a lot.</strong> The rubric puts Nova 1.32 points behind the panel's best; the model judge puts it 9.38 behind. Under the rubric no model dominates; under the model judge <code>gpt-5-mini</code> takes 87% and Nova takes none. So best-of-breed is currently a property of the scorer, not of the models — and the model judge here is Gemini, ranking the Gemini participant at 43% while putting Azure at 87%, which weakens the obvious vendor-bias objection without removing it.</p>
 <p><strong>Latency is a runtime fact before it is a model fact.</strong> The slowest leg is a reasoning model called across regions because of a storage flag. The fastest is a tiny model on the platform that also charges you a microVM start when you forget to pin a session.</p>
 <p><strong>What no scorer can move is whether a draft existed at all.</strong> The availability column is identical under both judges, which makes it the only column that does not wait on calibrating the rubric against human review.</p>
-<hr />
-<h2>Tool parity in availability is not tool parity in use</h2>
+<h4>Tool Parity in Availability is Not Tool Parity in Use</h4>
 <p>All three got the same tool, at the same time, with the same six-call budget. Use of it split by model and by prompt version:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/09-search-use.png" alt="Zero-search drafts, with the same tool and the same six-call budget on every cloud. AWS under instruction v1: 7 of 7 drafts made no search. AWS under v2: 2 of 9. AWS under v3: 1 of 7. Azure across all versions: 1 of 16. GCP under v3: none, because it spends the whole six-call budget every run"><figcaption>Zero-search drafts, with the same tool and the same six-call budget on every cloud. AWS under instruction v1: 7 of 7 drafts made no search. AWS under v2: 2 of 9. AWS under v3: 1 of 7. Azure across all versions: 1 of 16. GCP under v3: none, because it spends the whole six-call budget every run</figcaption></figure>
-<p>Two ends of one finding. Nova had to be <em>told</em>, twice, and still skips a run in seven. Gemini sits on the ceiling in every single v3 run, which means the budget is now shaping the drafts I am comparing — a model that always spends its last search would spend more if it had it.</p>
+<p>Two ends of one finding. Nova had to be told, twice, and still skips a run in seven. Gemini sits on the ceiling in every single v3 run, which means the budget is now shaping the drafts I am comparing.</p>
 <p>And the first model-backed run gave me the sharpest version of it:</p>
-<pre><code class="language-text">azure  searches=2   evidence 0.0
+<pre><code class="language-plaintext">azure  searches=2   evidence 0.0
 gcp    searches=0   evidence 5.0
 aws    searches=0   evidence 0.0
 </code></pre>
-<p><strong>The model that scored full marks on evidence never searched.</strong> Five points of citation-shaped text with nothing behind it. The rubric counts the gesture, which I had written down as a known weakness before search existed and now had as a measured one.</p>
-<p>The cause was upstream of the models: the shared instruction never told anyone to search. Fixing it took three versions, and v2 is a warning in the other direction — it said "one search for each specific figure", Gemini read that literally and spent 24 searches on a 300-word brief, which is 25 model calls and enough to exhaust the project's Vertex quota on its own. v3 names the budget the tool enforces, so the model plans against the bound instead of being cut off by it.</p>
-<p><strong>Version the instruction like you version the rubric.</strong> Runs either side of a prompt change are answering different questions, and an audit that averages across one reports a prompt edit as a change in the models. Mine carries <code>INSTRUCTION_VERSION</code> on every draft next to <code>RUBRIC_VERSION</code>, for exactly that reason.</p>
-<hr />
-<h2>Almost nothing on this path fails loudly</h2>
+<p>The model that scored full marks on evidence never searched. Five points of citation-shaped text with nothing behind it. The rubric counts the gesture, which I had written down as a known weakness before search existed and now had as a measured one.</p>
+<p>The cause was upstream of the models: the shared instruction never told anyone to search. Fixing it took three versions, and v2 is a warning in the other direction — it said "one search for each specific figure", Gemini read that literally and spent 24 searches on a 300-word brief, which is enough to exhaust the project's Vertex quota on its own. v3 names the budget the tool enforces, so the model plans against the bound instead of being cut off by it.</p>
+<p>Note- version the instruction like you version the rubric. Runs either side of a prompt change are answering different questions, and an audit that averages across one reports a prompt edit as a change in the models.</p>
+<h4>Almost Nothing on This Path Fails Loudly</h4>
 <p>The recurring shape, across all three clouds:</p>
 <ul>
-<li>An agent served <code>llm</code> mode with <strong>zero tools registered</strong>, because the tool connection failed as a <code>WARNING</code>, and answered <code>/health</code> with 200 the whole time.</li>
-<li>A provider quota error came back as a 31-word body, cleared the minimum word count, was stamped as a draft, scored 7.97 of 25, and sent back for a rewrite — and the run reported <strong>3/3 clouds answering</strong>.</li>
+<li>An agent served <code>llm</code> mode with zero tools registered, because the tool connection failed as a <code>WARNING</code>, and answered <code>/health</code> with 200 the whole time.</li>
+<li>A provider quota error came back as a 31-word body, cleared the minimum word count, was stamped as a draft, scored 7.97 of 25, and sent back for a rewrite — and the run reported 3/3 clouds answering.</li>
 <li>An agent served the public internet for days behind a correctly configured federated credential, because enforcement was a second step.</li>
-<li>The control harness that eventually found that had <strong>five defects of its own, four of which produced false passes</strong>.</li>
-<li>The first deployed run had both remote legs return <code>200</code> and then ten words of refusal, because they were still running the <em>previous</em> project's agents from a week earlier.</li>
+<li>The control harness that eventually found that had five defects of its own, four of which produced false passes.</li>
+<li>The first deployed run had both remote legs return <code>200</code> and then ten words of refusal, because they were still running the previous project's agents from a week earlier.</li>
 </ul>
 <p>Two habits came out of that and I would carry both to any mesh like this.</p>
-<p><strong>Type your failures.</strong> <code>transport</code>, <code>protocol</code>, <code>timeout</code>, <code>authentication</code>, <code>provider</code>. The one that earns its keep here is <code>provider</code>: a model that declines the topic is a provider outcome, and filing it as <code>protocol</code> turns "Bedrock refused" into "AgentCore broke A2A."</p>
-<p><strong>Let the agent report its own facts.</strong> Brain, model, degraded flag and search count are served by the agent, because only the agent knows them. My matrix used to print the mode from its <em>own</em> process — a different container once deployed — and duly reported <code>brain=direct</code> for a mesh of three model-backed agents.</p>
-<hr />
-<h2>Troubleshooting quick reference</h2>
+<p>Type your failures. <code>transport</code>, <code>protocol</code>, <code>timeout</code>, <code>authentication</code>, <code>provider</code>. The one that earns its keep here is <code>provider</code>: a model that declines the topic is a provider outcome, and filing it as <code>protocol</code> turns "Bedrock refused" into "AgentCore broke A2A."</p>
+<p>Let the agent report its own facts. Brain, model, degraded flag and search count are served by the agent, because only the agent knows them. My matrix used to print the mode from its own process — a different container once deployed — and duly reported <code>brain=direct</code> for a mesh of three model-backed agents.</p>
+<h4>So Why? Just Why? Why Build The Same Agent Three Times?</h4>
+<p>Because one agent tells you nothing about a framework.</p>
+<p>Every finding in this article is a difference, and a difference needs two things to compare. The card defect needed a client that was not ADK. The empty reply needed a client written against a different vendor's server. The dropped header needed the same code running on a platform that does not drop it. The model results needed the prompt, the tool and the rubric held identical while the cloud moved.</p>
+<p>Build it once and every one of those is either invisible or unattributable.</p>
+<h4>Troubleshooting Quick Reference</h4>
 <p><strong>HTTP 200, task <code>COMPLETED</code>, and the reply is an empty string.</strong> The reply is in <code>task.history</code>, not <code>artifacts</code> — that is where Agent Framework's executor leaves it. Read every carrier the spec allows.</p>
 <p><strong>The draft arrives twice and the word count doubles.</strong> ADK returns it as an artifact <em>and</em> in history. Deduplicate: one reply carried in two envelopes is one reply.</p>
 <p><strong><code>A2A version '0.3' is not supported by this handler</code>.</strong> AgentCore dropped the <code>A2A-Version</code> header. Assume the current version when the header is absent, and only when it is absent.</p>
@@ -361,21 +368,12 @@ aws    searches=0   evidence 0.0
 <p><strong>A model scores full marks for evidence with zero searches.</strong> Your scorer is counting citation-shaped text. Record the search count per draft and read it next to the score.</p>
 <p><strong>A quota error is recorded in the audit as a score.</strong> A provider error is not short, so a minimum word count will not catch it. Detect provider signatures before stamping a draft.</p>
 <p><strong>Discovery 403s while the invocation would have worked.</strong> The agent card sits behind the same authorization as the agent. Attach the credential to the <em>client</em>, not to the request.</p>
-<hr />
-<h2>The short version</h2>
-<ul>
-<li><strong>Share the prompt, the tool and the wire format. Never share the agent.</strong> The three frameworks do not reduce to one object, and the adapter that pretends otherwise becomes the thing under test.</li>
-<li><strong>Two of the three give you no function seam.</strong> Decide early where you stand between the model and the wire, because on ADK and Agent Framework that place is inside their object model — and what arrives there changes when you add a tool.</li>
-<li><strong>A completed task is not a delivered answer.</strong> Read every carrier, then deduplicate.</li>
-<li><strong>Treat the agent card as configuration, not as truth.</strong> One framework writes its bind address into it, one client honours that, and locally they are the same string.</li>
-<li><strong>Assume the platform edits your request.</strong> A header that survives two clouds is dropped by the third, and the error will blame your protocol version.</li>
-<li><strong>Expect the biggest model difference to be availability</strong>, not eloquence. Quota, a forced region and a required reasoning mode moved my results more than writing quality did.</li>
-<li><strong>Write down what your scorer cannot see.</strong> Every upstream defect — a doubled reply, a narrated tool call, a provider error — reaches the judge disguised as a quality difference.</li>
-</ul>
+<h4>Summary</h4>
+<p>The three frameworks do not reduce to one object, so share the prompt, the tool and the wire format and never try to share the agent. Assume the platform edits your request, treat the agent card as configuration rather than truth, and expect the biggest model difference to be availability rather than eloquence.</p>
 <p>Twenty-four briefs is enough to compute a rate and not enough to trust one, and all of mine were technology surveys. I would not quote these numbers as a model comparison and I do not. What I would claim is the shape: the platform differences are structural and repeatable, the model differences are mostly about whether you get an answer at all, and every framework will hide a different one from you.</p>
 <p>A2A did the thing it promised. Everything above is what is left over — and it will be different again for whoever wires the fourth cloud in, which is rather the point of writing it down.</p>
-<hr />
-<p><strong>Repo:</strong> <a href="https://github.com/xbill9/multicloud-a2a-subagent">github.com/xbill9/multicloud-a2a-subagent</a> — three agents, the shared instruction and tool, the coordinator and judge, the 3×3 interop matrix, the negative controls and the deploy scripts. <code>docs/INTEROP.md</code> carries every finding above with the date it was measured, and <code>docs/RUNBOOK.md</code> lists which claims are measured and which are still open.</p>
+<p>The repo carries the three agents, the shared instruction and tool, the coordinator and judge, the 3×3 interop matrix, the negative controls and the deploy scripts. <code>docs/INTEROP.md</code> carries every finding above with the date it was measured, and <code>docs/RUNBOOK.md</code> lists which claims are measured and which are still open:</p>
+<p><a href="https://github.com/xbill9/multicloud-a2a-subagent">github.com/xbill9/multicloud-a2a-subagent</a></p>
 <hr />
 <p><em>Every table in this piece is an image, because Medium renders no markdown tables. They are generated from the measured numbers by <code>docs/img/make_medium_graphics.py</code>, so they cannot drift from the results they describe without the script drifting too.</em></p>
 </article>

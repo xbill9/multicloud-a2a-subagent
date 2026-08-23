@@ -57,8 +57,8 @@ noted at the bottom.
    Section headings below that are `####`, not `##`. Medium has exactly two
    heading sizes, so `#`/`##` all land on the big one and a piece with a dozen
    sections reads as a dozen titles. `####` lands on the small one, which is
-   what a section heading should be. dev.to renders it the same way. The AWS
-   article is converted; the other two are not yet.
+   what a section heading should be. dev.to renders it the same way. All three
+   articles are converted.
 
 6. Leave the console blocks as text. Medium renders fenced code fine, and the
    two in this piece (the interop matrix and the version-mismatch error) are
