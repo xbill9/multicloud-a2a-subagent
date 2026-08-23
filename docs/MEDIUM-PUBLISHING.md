@@ -62,19 +62,20 @@ Three things about that flow, each of which cost a wasted import to learn:
   Regenerate in order: `make_gists.py`, then `make_code_images.py`, then
   `make_preview.py --web`.
 
-- **Unresolved: code images drop at article scale.** Table images import
-  every time. The code PNGs import every time *in isolation* -- a probe with
-  four distinct code images plus a table control landed 5 of 5 -- but in the
-  real articles they are silently dropped: the AWS import kept 4 of 11 images
-  and GDE kept 3 of 9, and in both cases the survivors were exactly the table
-  figures. Ruled out by measurement: the figure markup (identical for both, and
-  proven to import), the `/code/` path, the file itself (all 200, `image/png`,
-  25-80KB), the colour mode (RGBA for both), the aspect ratio (3.4:1 imported
-  fine in the probe), and Medium's image cache (a table image never imported
-  before still landed). What is left is scale -- image count, page size or a
-  fetch budget -- and that cannot be distinguished from outside. Until it is,
-  **check the code images after importing** and place any that are missing by
-  hand from `docs/img/medium/code/`.
+- **Never put a link in a `<figcaption>`.** Medium's importer drops the entire
+  figure if its caption contains an `<a>` — silently, with no error. This cost
+  the most time of anything here: every code figure was dropped from two
+  articles across four imports, while the table figures, identical but for
+  plain-prose captions, imported every time. So the caption is the filename
+  alone and the gist link goes in a paragraph *after* the figure, where a link
+  imports without trouble. Verified: framework 18 of 18 images, gde 10 of 10,
+  aws 11 of 11.
+
+- **Medium strips HTML comments, even correctly escaped ones.** The provenance
+  header `<!-- a2a-research ... -->` is served escaped inside `<pre><code>` and
+  is still removed. It is a single-line block, so it needs an image despite the
+  multi-line rule — `needs_image()` in `make_gists.py` covers both cases, and
+  `make_preview.py` imports it so the two cannot drift.
 
 - **Images need no work at all.** Medium fetches them, rehosts them at 800px
   and takes the `<figcaption>` as the caption. That is the whole of step 2
