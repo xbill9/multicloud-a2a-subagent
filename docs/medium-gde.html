@@ -193,7 +193,8 @@ article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-w
 <p><a href="https://a2a-protocol.org/">Agent2Agent (A2A) Protocol</a></p>
 <h4>Serving ADK Over A2A</h4>
 <p>This is the whole server:</p>
-<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-01.png" alt="gde-01-serving-adk-over-a2a.py, 11 lines. from google.adk.agents import LlmAgent / from google.adk.a2a.utils.agent_to_a2a import to_a2a / agent = LlmAgent( / model=&quot;gemini-2.5-flash&quot;, / name=..., description=..., / instruction=INSTRUCTION, / tools=[web_search], / ) / app = to_a2a(agent, host=HOST, port=PORT)"><figcaption>gde-01-serving-adk-over-a2a.py &mdash; <a href="https://gist.github.com/xbill9/44a5038e1565693e0c310d8aa5a13801">copy from the gist</a></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-01.png" alt="gde-01-serving-adk-over-a2a.py, 11 lines. from google.adk.agents import LlmAgent / from google.adk.a2a.utils.agent_to_a2a import to_a2a / agent = LlmAgent( / model=&quot;gemini-2.5-flash&quot;, / name=..., description=..., / instruction=INSTRUCTION, / tools=[web_search], / ) / app = to_a2a(agent, host=HOST, port=PORT)"><figcaption>gde-01-serving-adk-over-a2a.py</figcaption></figure>
+<p><a href="https://gist.github.com/xbill9/44a5038e1565693e0c310d8aa5a13801">Copy this block from the gist</a></p>
 
 <p>That is genuinely the shortest path from an <code>LlmAgent</code> to something another vendor's agent can call, and it is the reason I started here.</p>
 <p>Then deploy it to Cloud Run from source, no Dockerfile:</p>
@@ -201,7 +202,8 @@ article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-w
 </code></pre>
 <h4>Verify The Agent Card</h4>
 <p>First step after any deploy — fetch your own card:</p>
-<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-02.png" alt="gde-02-verify-the-agent-card.txt, 6 lines. $ curl -s https://&lt;the-adk-agent&gt;.run.app/.well-known/agent-card.json / {&quot;url&quot;: null, / &quot;additionalInterfaces&quot;: [ / {&quot;url&quot;: &quot;http://0.0.0.0:8080&quot;, &quot;protocolBinding&quot;: &quot;JSONRPC&quot;} / ]}"><figcaption>gde-02-verify-the-agent-card.txt &mdash; <a href="https://gist.github.com/xbill9/987b2462296c6f4890e0b1cb54582916">copy from the gist</a></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-02.png" alt="gde-02-verify-the-agent-card.txt, 6 lines. $ curl -s https://&lt;the-adk-agent&gt;.run.app/.well-known/agent-card.json / {&quot;url&quot;: null, / &quot;additionalInterfaces&quot;: [ / {&quot;url&quot;: &quot;http://0.0.0.0:8080&quot;, &quot;protocolBinding&quot;: &quot;JSONRPC&quot;} / ]}"><figcaption>gde-02-verify-the-agent-card.txt</figcaption></figure>
+<p><a href="https://gist.github.com/xbill9/987b2462296c6f4890e0b1cb54582916">Copy this block from the gist</a></p>
 
 <p>A public HTTPS endpoint advertising unroutable plaintext.</p>
 <p><code>to_a2a(agent, host, port)</code> writes <code>host:port</code> straight into the card's interface URL. On Cloud Run the process binds <code>0.0.0.0:8080</code>, so that is what the card says.</p>
@@ -229,7 +231,8 @@ article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-w
 </code></pre>
 <p>It carries the two things the coordinator cannot reconstruct from its side of the wire — which model actually answered, and whether a model answered at all. Ask Gemini to emit its own metadata and a model that gets it wrong misattributes a draft in the audit, which is the one error an audit cannot detect from the inside.</p>
 <p>That wrapper became load-bearing the moment I attached a tool. The first version concatenated the text of every event in the stream, which is correct while the stream holds exactly one event. With a <code>web_search</code> tool bound, the stream also carries the model's commentary around each tool call — "Let me look that up", a summary of what it found — and concatenating those produces a draft that opens with Gemini narrating its own research. The rubric then scores the narration.</p>
-<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-03.png" alt="gde-03-there-is-no-function-seam.py, 4 lines. async for event in inner.run_async(ctx): / if not event.is_final_response(): / continue          # &lt;- the whole fix / ..."><figcaption>gde-03-there-is-no-function-seam.py &mdash; <a href="https://gist.github.com/xbill9/ba38c0e09639a97746dc665e7bf51d35">copy from the gist</a></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-03.png" alt="gde-03-there-is-no-function-seam.py, 4 lines. async for event in inner.run_async(ctx): / if not event.is_final_response(): / continue          # &lt;- the whole fix / ..."><figcaption>gde-03-there-is-no-function-seam.py</figcaption></figure>
+<p><a href="https://gist.github.com/xbill9/ba38c0e09639a97746dc665e7bf51d35">Copy this block from the gist</a></p>
 
 <p>Function calls and their results have no text and were already skipped by a <code>part.text</code> filter. What has to be excluded explicitly is the model text that accompanies them.</p>
 <h4>The Tool is Deliberately Not google_search</h4>
@@ -240,7 +243,8 @@ article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-w
 <h4>Calling ADK From a Program</h4>
 <p>As a client, ADK is the heaviest of the three stacks by a wide margin. <code>RemoteA2aAgent</code> is a <code>BaseAgent</code> meant to sit inside an agent tree, so using it as a plain client means standing up a <code>Runner</code>, an <code>InMemorySessionService</code> and a session — per request.</p>
 <p>Local, direct-brain, no model in the path, every client against every server:</p>
-<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-04.png" alt="gde-04-calling-adk-from-a-program.txt, 9 lines. $ python3 -m matrix.runner / client \ server  gcp          aws          azure / ------------------------------------------------- / a2a-sdk          ok 134ms     ok 8ms       ok 8ms / agent-framework  ok 129ms     ok 7ms       ok 8ms / google-adk       ok 920ms     ok 9ms       ok 10ms / 9/9 attempted cells succeeded"><figcaption>gde-04-calling-adk-from-a-program.txt &mdash; <a href="https://gist.github.com/xbill9/81593d5ef8c3024938d885b0b1435ef2">copy from the gist</a></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-04.png" alt="gde-04-calling-adk-from-a-program.txt, 9 lines. $ python3 -m matrix.runner / client \ server  gcp          aws          azure / ------------------------------------------------- / a2a-sdk          ok 134ms     ok 8ms       ok 8ms / agent-framework  ok 129ms     ok 7ms       ok 8ms / google-adk       ok 920ms     ok 9ms       ok 10ms / 9/9 attempted cells succeeded"><figcaption>gde-04-calling-adk-from-a-program.txt</figcaption></figure>
+<p><a href="https://gist.github.com/xbill9/81593d5ef8c3024938d885b0b1435ef2">Copy this block from the gist</a></p>
 
 <p>Single loopback runs, so read it as an ordering and nothing more. The shape holds anyway: against the ADK server the ADK client costs about seven times what the other two do, and it still emits <code>[EXPERIMENTAL]</code> warnings on every call.</p>
 <p>If you are writing a program that calls an agent rather than an agent that calls an agent, the reference <code>a2a-sdk</code> client is the lighter object.</p>
@@ -250,12 +254,14 @@ article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-w
 <p>It is also why the coordinator lives on Google rather than anywhere else. The other two runtimes' minting ability was never confirmed, so hosting it there would have meant storing a credential. Where your coordinator runs decides how many secrets your system has.</p>
 <h4>And One Thing It Costs</h4>
 <p>A cold start is visible in the wrong place. On a scale-to-zero service the first thing a caller touches is not your agent, it is your agent card:</p>
-<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-05.png" alt="gde-05-and-one-thing-it-costs.txt, 2 lines. +792ms  gcp  D research-gcp-...run.app/.well-known/  200   5849ms / +6643ms  gcp  I research-gcp-...run.app/              200     55ms"><figcaption>gde-05-and-one-thing-it-costs.txt &mdash; <a href="https://gist.github.com/xbill9/63e68c6ec37c99e9c14c5a18f80fbacb">copy from the gist</a></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-05.png" alt="gde-05-and-one-thing-it-costs.txt, 2 lines. +792ms  gcp  D research-gcp-...run.app/.well-known/  200   5849ms / +6643ms  gcp  I research-gcp-...run.app/              200     55ms"><figcaption>gde-05-and-one-thing-it-costs.txt</figcaption></figure>
+<p><a href="https://gist.github.com/xbill9/63e68c6ec37c99e9c14c5a18f80fbacb">Copy this block from the gist</a></p>
 
 <p>5849ms on discovery, 55ms on the actual invocation once warm. A single per-leg number would have recorded that run as "Gemini is slow."</p>
 <h4>The Buildpack Entrypoint Trap</h4>
 <p>This one cost a deploy cycle. The GCP side is built once from source and deployed several times, with the entrypoint overridden to run a different process out of the same image. The documented override fails:</p>
-<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-06.png" alt="gde-06-the-buildpack-entrypoint-trap.txt, 3 lines. --command python --args=&quot;-m,agents.gcp.server&quot; / failed to resolve binary path: error finding executable &quot;python&quot; in PATH"><figcaption>gde-06-the-buildpack-entrypoint-trap.txt &mdash; <a href="https://gist.github.com/xbill9/81503e37b58bd892f4147a82ea0e365c">copy from the gist</a></figcaption></figure>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/gde-06.png" alt="gde-06-the-buildpack-entrypoint-trap.txt, 3 lines. --command python --args=&quot;-m,agents.gcp.server&quot; / failed to resolve binary path: error finding executable &quot;python&quot; in PATH"><figcaption>gde-06-the-buildpack-entrypoint-trap.txt</figcaption></figure>
+<p><a href="https://gist.github.com/xbill9/81503e37b58bd892f4147a82ea0e365c">Copy this block from the gist</a></p>
 
 <p>A buildpack image keeps its interpreter in CNB layers, and <code>/cnb/lifecycle/launcher</code> is what puts them on <code>PATH</code> before exec'ing your process. Overriding the entrypoint replaces the launcher, so the override runs where Python does not exist.</p>
 <p>Run it through the launcher instead:</p>

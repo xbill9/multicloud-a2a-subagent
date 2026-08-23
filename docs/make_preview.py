@@ -210,10 +210,18 @@ figcaption {
 #:
 #: The image guarantees it renders. The gist in the caption guarantees it is
 #: still copyable. Neither on its own does both.
+#: **The caption must not contain a link.** Medium's importer drops the whole
+#: figure if its `<figcaption>` holds an `<a>`. That is what cost the code
+#: images: the table figures, whose captions are plain prose, imported every
+#: time, while every code figure -- identical but for a linked caption -- was
+#: dropped, in two articles, across four imports. A probe of four distinct code
+#: images with plain captions landed all four, which is the control.
+#: So the caption stays plain and the gist link goes in a paragraph after the
+#: figure, where a link imports fine.
 CODE_FIGURE = (
     '<figure><img src="{img}" alt="{alt}">'
-    '<figcaption>{filename} &mdash; <a href="{url}">copy from the gist</a>'
-    '</figcaption></figure>'
+    '<figcaption>{filename}</figcaption></figure>\n'
+    '<p><a href="{url}">Copy this block from the gist</a></p>'
 )
 
 
