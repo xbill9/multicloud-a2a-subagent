@@ -410,6 +410,15 @@ def publish_copy(slug: str, page: str) -> Path:
     it and cannot have it cached; change nothing and the URL is stable, so
     re-running this generator does not churn.
     """
+    # Strip the canonical before hashing. Medium's importer *resolves* it: with
+    # `<link rel="canonical" href=".../medium-aws.html">` in the page, every
+    # content-addressed URL still imported the content cached against
+    # medium-aws.html, which is why two fixes in a row looked like no-ops. The
+    # embed probe imported fresh content the whole time -- it had no canonical.
+    # The stable page keeps its canonical; only this copy loses it, and Medium's
+    # own story settings are where a canonical belongs anyway.
+    page = re.sub(r'\n<link rel="canonical"[^>]*>', "", page)
+
     digest = hashlib.sha256(page.encode()).hexdigest()[:10]
     IMPORT_DIR.mkdir(exist_ok=True)
     target = IMPORT_DIR / f"{slug}-{digest}.html"
