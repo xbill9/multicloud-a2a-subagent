@@ -207,49 +207,21 @@ interoperability.</p>
 <h4>Three Frameworks, Three Shapes</h4>
 <p>Here is the entire model-side construction on each cloud. Not excerpts — this is all of it.</p>
 <p>Google, ADK:</p>
-<pre><code class="language-python">from google.adk.agents import LlmAgent
+<p><a href="https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692">https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692</a></p>
 
-LlmAgent(
-    model=&quot;gemini-2.5-flash&quot;,          # a model id string
-    name=..., description=...,
-    instruction=INSTRUCTION,           # `instruction`
-    tools=[web_search],                # a plain callable
-)
-</code></pre>
 <p>AWS, Strands:</p>
-<pre><code class="language-python">from strands import Agent, tool
-from strands.models import BedrockModel
+<p><a href="https://gist.github.com/xbill9/0559b1c42d304e90eac6b41ef0fa757e">https://gist.github.com/xbill9/0559b1c42d304e90eac6b41ef0fa757e</a></p>
 
-Agent(
-    model=BedrockModel(model_id=&quot;us.amazon.nova-micro-v1:0&quot;),
-    system_prompt=INSTRUCTION,         # `system_prompt`
-    tools=[tool(web_search)],          # explicitly decorated
-)
-</code></pre>
 <p>Azure, Agent Framework:</p>
-<pre><code class="language-python">from agent_framework import Agent
-from agent_framework.foundry import FoundryChatClient
-from azure.identity import DefaultAzureCredential
+<p><a href="https://gist.github.com/xbill9/afe6a1dfc0ec1559c9afcc29ce6c88dd">https://gist.github.com/xbill9/afe6a1dfc0ec1559c9afcc29ce6c88dd</a></p>
 
-Agent(
-    client=FoundryChatClient(          # a *chat client*, not a model
-        project_endpoint=os.environ[&quot;FOUNDRY_PROJECT_ENDPOINT&quot;],
-        model=model_id(),
-        credential=DefaultAzureCredential(),
-    ),
-    instructions=INSTRUCTION,          # `instructions`, plural
-    tools=[web_search],
-    default_options={&quot;store&quot;: False},
-)
-</code></pre>
 <p>Three names for the system prompt. Three levels at which the model is named: a string, a model object, a client holding an endpoint and a credential. Three tool conventions.</p>
 <p>None of that is hard. All of it is untranslatable.</p>
 <p>There is no adapter that turns these into one object, and every hour I have seen spent trying to build one produced a fourth thing to maintain that then became what was actually under test. Share the prompt, the tool and the wire format. Do not try to share the agent.</p>
 <h4>Two of the Three Give You Nowhere to Stand</h4>
 <p>Strands hands you a function. Everything else can wrap it from outside:</p>
-<pre><code class="language-python">async def respond(prompt: str) -&gt; str:
-    return str(await agent.invoke_async(prompt))
-</code></pre>
+<p><a href="https://gist.github.com/xbill9/daad1963fb34bb0f080949bf9e4af41f">https://gist.github.com/xbill9/daad1963fb34bb0f080949bf9e4af41f</a></p>
+
 <p>ADK and Agent Framework do not. <code>to_a2a()</code> takes an agent and serialises its event stream, and Agent Framework's <code>A2AExecutor</code> calls the agent too. Neither gives you a <code>(prompt) -&gt; reply</code> boundary, so anything you need to do between the model and the wire has to be done inside that framework's own object model.</p>
 <p>This is not a style complaint. It decides where a fact can be recorded. Every draft in this system carries one line:</p>
 <pre><code class="language-plaintext">&lt;!-- a2a-research agent=gcp model=gemini-2.5-flash brain=llm --&gt;
@@ -267,13 +239,8 @@ Agent(
 <p>"The call succeeded" and "you received the answer" are different claims in A2A.</p>
 <h4>The Agent Card Advertises an Address You Cannot Dial</h4>
 <p><code>to_a2a(agent, host, port)</code> writes the bind address straight into the card:</p>
-<pre><code class="language-console">$ curl -s https://&lt;the-adk-agent&gt;.run.app/.well-known/agent-card.json
+<p><a href="https://gist.github.com/xbill9/c51493acf1b33fce908c2ffea896a9ec">https://gist.github.com/xbill9/c51493acf1b33fce908c2ffea896a9ec</a></p>
 
-{&quot;url&quot;: null,
- &quot;additionalInterfaces&quot;: [
-   {&quot;url&quot;: &quot;http://0.0.0.0:8080&quot;, &quot;protocolBinding&quot;: &quot;JSONRPC&quot;}
- ]}
-</code></pre>
 <p>A public HTTPS endpoint advertising unroutable plaintext. The AWS and Azure agents take a <code>PUBLIC_URL</code> and advertise that — the behaviour ADK is missing, not anything clever.</p>
 <p>Note- it cannot reproduce locally, because on a laptop the bind address and the dial address are the same string. It needs a deployment, which is exactly how it survives into one.</p>
 <p>Which clients survive it is the opposite of what the ergonomics would predict:</p>
@@ -303,16 +270,8 @@ Agent(
 <p><code>a2a-sdk</code> — resolve the card, mutate it, build a client, iterate typed chunks, close it. Verbose, and the only one low-level enough to work around the card defect above.</p>
 <p><code>google-adk</code> <code>RemoteA2aAgent</code> — a <code>BaseAgent</code> meant to live inside an agent tree. Using it as a plain client means standing up a <code>Runner</code>, a session service and a session, per request. The ADK stack assumes A2A is something an agent does, not something a program does.</p>
 <p>Every client against every server, local and with no model in the path:</p>
-<pre><code class="language-console">$ python3 -m matrix.runner
+<p><a href="https://gist.github.com/xbill9/388860c053897b920f3cf4619b1982a2">https://gist.github.com/xbill9/388860c053897b920f3cf4619b1982a2</a></p>
 
-client \ server  gcp          aws          azure
--------------------------------------------------
-a2a-sdk          ok 134ms     ok 8ms       ok 8ms
-agent-framework  ok 129ms     ok 7ms       ok 8ms
-google-adk       ok 920ms     ok 9ms       ok 10ms
-
-9/9 attempted cells succeeded
-</code></pre>
 <p>Read that as an ordering and nothing more — single runs on loopback. And read it with the honest dependency in front of you: all three client stacks resolve to the same <code>a2a-sdk</code> wire implementation underneath, and two of the three servers share serving scaffolding.</p>
 <p>Note- nine cells is a presentation, not nine independent experiments. Which is what makes the failures above interesting. Shared implementation on both ends should have made all of this trivial.</p>
 <h4>The Models Differ Where a Rubric Cannot See</h4>
@@ -333,10 +292,8 @@ google-adk       ok 920ms     ok 9ms       ok 10ms
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/09-search-use.png" alt="Zero-search drafts, with the same tool and the same six-call budget on every cloud. AWS under instruction v1: 7 of 7 drafts made no search. AWS under v2: 2 of 9. AWS under v3: 1 of 7. Azure across all versions: 1 of 16. GCP under v3: none, because it spends the whole six-call budget every run"><figcaption>Zero-search drafts, with the same tool and the same six-call budget on every cloud. AWS under instruction v1: 7 of 7 drafts made no search. AWS under v2: 2 of 9. AWS under v3: 1 of 7. Azure across all versions: 1 of 16. GCP under v3: none, because it spends the whole six-call budget every run</figcaption></figure>
 <p>Two ends of one finding. Nova had to be told, twice, and still skips a run in seven. Gemini sits on the ceiling in every single v3 run, which means the budget is now shaping the drafts I am comparing.</p>
 <p>And the first model-backed run gave me the sharpest version of it:</p>
-<pre><code class="language-plaintext">azure  searches=2   evidence 0.0
-gcp    searches=0   evidence 5.0
-aws    searches=0   evidence 0.0
-</code></pre>
+<p><a href="https://gist.github.com/xbill9/c5cb34b141c78d7312fe128ed04dd1cd">https://gist.github.com/xbill9/c5cb34b141c78d7312fe128ed04dd1cd</a></p>
+
 <p>The model that scored full marks on evidence never searched. Five points of citation-shaped text with nothing behind it. The rubric counts the gesture, which I had written down as a known weakness before search existed and now had as a measured one.</p>
 <p>The cause was upstream of the models: the shared instruction never told anyone to search. Fixing it took three versions, and v2 is a warning in the other direction — it said "one search for each specific figure", Gemini read that literally and spent 24 searches on a 300-word brief, which is enough to exhaust the project's Vertex quota on its own. v3 names the budget the tool enforces, so the model plans against the bound instead of being cut off by it.</p>
 <p>Note- version the instruction like you version the rubric. Runs either side of a prompt change are answering different questions, and an audit that averages across one reports a prompt edit as a change in the models.</p>

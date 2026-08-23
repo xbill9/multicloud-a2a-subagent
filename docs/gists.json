@@ -1,0 +1,142 @@
+{
+  "aws-01": {
+    "description": "aws: What is Strands",
+    "filename": "aws-01-what-is-strands.py",
+    "id": "5b1d0134d0b1cc490798b79748d5add4",
+    "sha": "9de3b955fb572389",
+    "url": "https://gist.github.com/xbill9/5b1d0134d0b1cc490798b79748d5add4"
+  },
+  "aws-02": {
+    "description": "aws: The AgentCore Contract",
+    "filename": "aws-02-the-agentcore-contract.py",
+    "id": "d1289240466c66f5b8cc42501d1e6455",
+    "sha": "dbed6cd2f741b9b3",
+    "url": "https://gist.github.com/xbill9/d1289240466c66f5b8cc42501d1e6455"
+  },
+  "aws-03": {
+    "description": "aws: Building the Image",
+    "filename": "aws-03-building-the-image.dockerfile",
+    "id": "231bd018f558ad2165e5e46148cf62f6",
+    "sha": "f8f0b6b75c2cdb30",
+    "url": "https://gist.github.com/xbill9/231bd018f558ad2165e5e46148cf62f6"
+  },
+  "aws-04": {
+    "description": "aws: Verify The Installation",
+    "filename": "aws-04-verify-the-installation.sh",
+    "id": "d5d9bb67742b38afe1095c1f881053a3",
+    "sha": "4f3fe951c64a5fd8",
+    "url": "https://gist.github.com/xbill9/d5d9bb67742b38afe1095c1f881053a3"
+  },
+  "aws-05": {
+    "description": "aws: Test The Cross-Cloud Integration",
+    "filename": "aws-05-test-the-cross-cloud-integration.txt",
+    "id": "7d2f700f0ec7f4ba2b1a03347cccefa7",
+    "sha": "204a3081c77b5eb4",
+    "url": "https://gist.github.com/xbill9/7d2f700f0ec7f4ba2b1a03347cccefa7"
+  },
+  "aws-06": {
+    "description": "aws: The Header AgentCore Drops",
+    "filename": "aws-06-the-header-agentcore-drops.py",
+    "id": "8ab6e51426b1cf781e0dfa48f7e62114",
+    "sha": "bca4f581782a39d4",
+    "url": "https://gist.github.com/xbill9/8ab6e51426b1cf781e0dfa48f7e62114"
+  },
+  "aws-07": {
+    "description": "aws: Least Privilege: Discovery is a Separate Action",
+    "filename": "aws-07-least-privilege-discovery-is-a-separate-.json",
+    "id": "cf9dc2116f48c10b30de320cf504ce0a",
+    "sha": "11a69e784656f8f6",
+    "url": "https://gist.github.com/xbill9/cf9dc2116f48c10b30de320cf504ce0a"
+  },
+  "framework-01": {
+    "description": "framework: Three Frameworks, Three Shapes",
+    "filename": "framework-01-three-frameworks-three-shapes.py",
+    "id": "27bc18ab1bccbf98ca8657d885378692",
+    "sha": "86b2eb8e83ed7848",
+    "url": "https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692"
+  },
+  "framework-02": {
+    "description": "framework: Three Frameworks, Three Shapes",
+    "filename": "framework-02-three-frameworks-three-shapes.py",
+    "id": "0559b1c42d304e90eac6b41ef0fa757e",
+    "sha": "89ce30a0172171c0",
+    "url": "https://gist.github.com/xbill9/0559b1c42d304e90eac6b41ef0fa757e"
+  },
+  "framework-03": {
+    "description": "framework: Three Frameworks, Three Shapes",
+    "filename": "framework-03-three-frameworks-three-shapes.py",
+    "id": "afe6a1dfc0ec1559c9afcc29ce6c88dd",
+    "sha": "c993c71ff4d6227e",
+    "url": "https://gist.github.com/xbill9/afe6a1dfc0ec1559c9afcc29ce6c88dd"
+  },
+  "framework-04": {
+    "description": "framework: Two of the Three Give You Nowhere to Stand",
+    "filename": "framework-04-two-of-the-three-give-you-nowhere-to-sta.py",
+    "id": "daad1963fb34bb0f080949bf9e4af41f",
+    "sha": "f41164b5bb097cc8",
+    "url": "https://gist.github.com/xbill9/daad1963fb34bb0f080949bf9e4af41f"
+  },
+  "framework-05": {
+    "description": "framework: The Agent Card Advertises an Address You Cannot Dial",
+    "filename": "framework-05-the-agent-card-advertises-an-address-you.txt",
+    "id": "c51493acf1b33fce908c2ffea896a9ec",
+    "sha": "03aacf0a3f38e18c",
+    "url": "https://gist.github.com/xbill9/c51493acf1b33fce908c2ffea896a9ec"
+  },
+  "framework-06": {
+    "description": "framework: Calling Them is Three Different Jobs",
+    "filename": "framework-06-calling-them-is-three-different-jobs.txt",
+    "id": "388860c053897b920f3cf4619b1982a2",
+    "sha": "d7fe7a7e0c198bd3",
+    "url": "https://gist.github.com/xbill9/388860c053897b920f3cf4619b1982a2"
+  },
+  "framework-07": {
+    "description": "framework: Tool Parity in Availability is Not Tool Parity in Use",
+    "filename": "framework-07-tool-parity-in-availability-is-not-tool-.txt",
+    "id": "c5cb34b141c78d7312fe128ed04dd1cd",
+    "sha": "1ef46ec0212b786b",
+    "url": "https://gist.github.com/xbill9/c5cb34b141c78d7312fe128ed04dd1cd"
+  },
+  "gde-01": {
+    "description": "gde: Serving ADK Over A2A",
+    "filename": "gde-01-serving-adk-over-a2a.py",
+    "id": "44a5038e1565693e0c310d8aa5a13801",
+    "sha": "7d537558350a1e01",
+    "url": "https://gist.github.com/xbill9/44a5038e1565693e0c310d8aa5a13801"
+  },
+  "gde-02": {
+    "description": "gde: Verify The Agent Card",
+    "filename": "gde-02-verify-the-agent-card.txt",
+    "id": "987b2462296c6f4890e0b1cb54582916",
+    "sha": "03aacf0a3f38e18c",
+    "url": "https://gist.github.com/xbill9/987b2462296c6f4890e0b1cb54582916"
+  },
+  "gde-03": {
+    "description": "gde: There is No Function Seam",
+    "filename": "gde-03-there-is-no-function-seam.py",
+    "id": "ba38c0e09639a97746dc665e7bf51d35",
+    "sha": "a58c943bb2115806",
+    "url": "https://gist.github.com/xbill9/ba38c0e09639a97746dc665e7bf51d35"
+  },
+  "gde-04": {
+    "description": "gde: Calling ADK From a Program",
+    "filename": "gde-04-calling-adk-from-a-program.txt",
+    "id": "81593d5ef8c3024938d885b0b1435ef2",
+    "sha": "d7fe7a7e0c198bd3",
+    "url": "https://gist.github.com/xbill9/81593d5ef8c3024938d885b0b1435ef2"
+  },
+  "gde-05": {
+    "description": "gde: And One Thing It Costs",
+    "filename": "gde-05-and-one-thing-it-costs.txt",
+    "id": "63e68c6ec37c99e9c14c5a18f80fbacb",
+    "sha": "916474c117fc6d09",
+    "url": "https://gist.github.com/xbill9/63e68c6ec37c99e9c14c5a18f80fbacb"
+  },
+  "gde-06": {
+    "description": "gde: The Buildpack Entrypoint Trap",
+    "filename": "gde-06-the-buildpack-entrypoint-trap.txt",
+    "id": "81503e37b58bd892f4147a82ea0e365c",
+    "sha": "6a8658b347ec1708",
+    "url": "https://gist.github.com/xbill9/81503e37b58bd892f4147a82ea0e365c"
+  }
+}

@@ -28,6 +28,8 @@ from pathlib import Path
 
 import markdown
 
+import make_gists
+
 DOCS = Path(__file__).parent
 SLUGS = ("framework", "gde", "aws")
 
@@ -192,6 +194,42 @@ figcaption {
 """
 
 
+#: How a gist is handed to Medium's importer. This is the one uncertain
+#: element in the whole pipeline, so it is one constant rather than a shape
+#: spread through the code -- if Medium stops promoting a standalone link to
+#: an embed, this line is the only thing that changes.
+#:
+#: A bare link, not GitHub's `<script>` embed: an importer that sanitises HTML
+#: will drop a script tag, and Medium's link-to-embed promotion is the
+#: mechanism that is actually documented to work.
+GIST_EMBED = '<p><a href="{url}">{url}</a></p>'
+
+
+def gistify(text: str, slug: str) -> str:
+    """Swap each multi-line fenced block for its gist link.
+
+    Only in `--web`. The proof mode keeps the code inline, because a person
+    reading it wants the code on the page; the web page exists to be read by
+    Medium's importer, which cannot keep a newline inside a `<pre>`.
+    """
+    manifest = make_gists.load()
+    have = [b for b in make_gists.blocks(slug) if b["key"] in manifest]
+    missing = [b["key"] for b in make_gists.blocks(slug) if b["key"] not in manifest]
+    if missing:
+        raise SystemExit(
+            f"article-medium-{slug}.md: no gist for {', '.join(missing)}. "
+            f"Run `python3 docs/make_gists.py` first.")
+
+    it = iter(have)
+
+    def swap(match):
+        if match.group(2).strip().count("\n") < 1:
+            return match.group(0)          # single line survives the import
+        return GIST_EMBED.format(url=manifest[next(it)["key"]]["url"])
+
+    return make_gists.BLOCK_RE.sub(swap, text)
+
+
 def build(slug: str, out_path: Path, *, web: bool) -> Path:
     """Render one article.
 
@@ -203,6 +241,9 @@ def build(slug: str, out_path: Path, *, web: bool) -> Path:
     machine* needs the whole document.
     """
     text = (DOCS / f"article-medium-{slug}.md").read_text()
+
+    if web:
+        text = gistify(text, slug)
 
     title = re.search(r"^# (.+)$", text, re.M).group(1)
     standfirst = re.search(r"^### (.+)$", text, re.M).group(1)

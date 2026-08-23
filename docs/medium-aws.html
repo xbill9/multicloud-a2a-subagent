@@ -198,15 +198,8 @@ article.sheet > h1 { font-family: "IBM Plex Sans", system-ui, sans-serif; font-w
 <p>Strands Agents is AWS's open source agent SDK. You give it a model, a system prompt and some tools, and it runs the loop. It is a few lines to a working agent and it does not assume Bedrock — but on Bedrock it is the shortest path there is.</p>
 <p>More details are available here:</p>
 <p><a href="https://strandsagents.com/">Strands Agents</a></p>
-<pre><code class="language-python">agent = Agent(
-    model=BedrockModel(model_id=&quot;us.amazon.nova-micro-v1:0&quot;),
-    system_prompt=INSTRUCTION,
-    tools=[tool(web_search)],
-)
+<p><a href="https://gist.github.com/xbill9/5b1d0134d0b1cc490798b79748d5add4">https://gist.github.com/xbill9/5b1d0134d0b1cc490798b79748d5add4</a></p>
 
-async def respond(prompt: str) -&gt; str:
-    return str(await agent.invoke_async(prompt))
-</code></pre>
 <p>Note- Strands ships no A2A server integration, which turns out to be the easiest starting position of the three frameworks here. You drop that <code>respond</code> function behind the <code>a2a-sdk</code> reference routes and you are serving the protocol's own implementation. No adapter, no event-stream translation.</p>
 <p>The hard part was never Strands. It was the runtime.</p>
 <h4>The AgentCore Contract</h4>
@@ -215,22 +208,16 @@ async def respond(prompt: str) -&gt; str:
 <p>Port 9000, not 8080. 8080 is the HTTP protocol's port.</p>
 <p>Path <code>/</code>, not <code>/invocations</code>. That is the path the platform exposes to your callers, not the one your container serves.</p>
 <p><code>/ping</code> is the one thing you have to add, and it is not your existing <code>/health</code>. A container that fails the ping never reaches the point of being invoked:</p>
-<pre><code class="language-python">async def ping(request):
-    return JSONResponse({&quot;status&quot;: &quot;Healthy&quot;})
-</code></pre>
+<p><a href="https://gist.github.com/xbill9/d1289240466c66f5b8cc42501d1e6455">https://gist.github.com/xbill9/d1289240466c66f5b8cc42501d1e6455</a></p>
+
 <p>Note- that response deliberately omits <code>time_of_last_update</code>. A timestamp that advances on every poll reads as a continuous status change, which stops the idle session timeout from ever firing and leaks sessions until MaxLifetime.</p>
 <h4>Building the Image</h4>
 <p>ARM64 is required, not preferred. On an x86 host that means buildx:</p>
 <pre><code class="language-shell">docker buildx build --platform linux/arm64 --load -f infra/Dockerfile.aws .
 </code></pre>
 <p>The rest of the Dockerfile is ordinary. Bind to <code>0.0.0.0</code>, expose 9000, and let the deploy step set <code>PUBLIC_URL</code> once the runtime ARN exists:</p>
-<pre><code class="language-dockerfile">ENV HOST=0.0.0.0 \
-    PORT=9000 \
-    RESEARCH_MODEL_MODE=direct
+<p><a href="https://gist.github.com/xbill9/231bd018f558ad2165e5e46148cf62f6">https://gist.github.com/xbill9/231bd018f558ad2165e5e46148cf62f6</a></p>
 
-EXPOSE 9000
-CMD [&quot;python&quot;, &quot;-m&quot;, &quot;agents.aws.server&quot;]
-</code></pre>
 <p><code>PUBLIC_URL</code> has to be set after the ARN exists, because the card must advertise the AgentCore invocations URL rather than the container's bind address. Leave it out and the card advertises <code>0.0.0.0:9000</code>, which is the defect that breaks Google ADK's own A2A client against a hosted server.</p>
 <h4>Deploying the Agent</h4>
 <p>One command builds the ARM64 image, pushes it to ECR, creates the runtime and both IAM roles:</p>
@@ -246,28 +233,15 @@ CMD [&quot;python&quot;, &quot;-m&quot;, &quot;agents.aws.server&quot;]
 <pre><code class="language-shell">./infra/deploy_aws.sh verify
 </code></pre>
 <p>Two of them are just curl, and both must fail:</p>
-<pre><code class="language-shell"># 1. no signature -&gt; expect 403
-curl -s -o /dev/null -w '%{http_code}\n' -X POST &quot;$URL&quot;
+<p><a href="https://gist.github.com/xbill9/d5d9bb67742b38afe1095c1f881053a3">https://gist.github.com/xbill9/d5d9bb67742b38afe1095c1f881053a3</a></p>
 
-# 2. unsigned agent-card fetch -&gt; expect 403
-curl -s -o /dev/null -w '%{http_code}\n' &quot;${URL}.well-known/agent-card.json&quot;
-</code></pre>
 <p>SigV4 runtimes return <code>ACCESS_DENIED</code> with no <code>WWW-Authenticate</code> header, unlike an OAuth-configured one, which 401s and advertises its authorization server.</p>
 <p>The positive control is the coordinator on Google Cloud, because it is the only principal that can mint a token this role's trust policy accepts.</p>
 <h4>Test The Cross-Cloud Integration</h4>
 <p>This step tests the whole path: a coordinator on Cloud Run, minting its own OIDC tokens, calling all three agents. <code>GET /api/timeline</code> prints one run's HTTP calls in wall-clock order.</p>
 <p>These are the AWS rows of the first three-cloud run from the deployed master, 2026-08-12. The <code>leg</code> column, the other two legs and the overlap bars are trimmed here to fit; the full eleven-line transcript is in the repo README:</p>
-<pre><code class="language-plaintext">run  2026-08-12T23:11:25+00:00   3 leg(s)   elapsed 6700ms
+<p><a href="https://gist.github.com/xbill9/7d2f700f0ec7f4ba2b1a03347cccefa7">https://gist.github.com/xbill9/7d2f700f0ec7f4ba2b1a03347cccefa7</a></p>
 
-      at    host                                         code    took
---------  - -------------------------------------------- ---- -------
-  +715ms  K metadata.google.internal/computeMetadata/v1/  200   120ms
-  +860ms  K sts.us-west-2.amazonaws.com/                  200   221ms
- +1082ms  I bedrock-agentcore.us-west-2.amazonaws.com/ru  200   666ms
- +1749ms  I bedrock-agentcore.us-west-2.amazonaws.com/ru  200   164ms
-
-  K credential   I A2A invocation
-</code></pre>
 <p>Read top to bottom and the whole leg is there. A token minted at <code>metadata.google.internal</code>, presented to <code>sts.us-west-2.amazonaws.com</code>, then two calls to <code>bedrock-agentcore.us-west-2.amazonaws.com</code>. Two calls, one credential — which is why the IAM policy below needs two actions and the credential is attached to the HTTP client rather than to a request.</p>
 <p>Note- that transcript was accurate when captured. The runtime id in it is not the one deployed now, which is the argument for reading a transcript as a record and not as configuration.</p>
 <h4>The Header AgentCore Drops</h4>
@@ -278,12 +252,8 @@ curl -s -o /dev/null -w '%{http_code}\n' &quot;${URL}.well-known/agent-card.json
 <p>Cloud Run forwards the header. Container Apps forwards the header. AgentCore does not.</p>
 <p>So the same client, the same <code>a2a-sdk</code> on both ends, and the same server code succeed on two clouds and fail on the third — with an error that blames the protocol version and names nothing about the platform that removed it.</p>
 <p>The fix is a middleware that fills the header when it is missing, and only when it is missing:</p>
-<pre><code class="language-python">if VERSION_HEADER.lower() not in {k.lower() for k in request.headers}:
-    request.scope[&quot;headers&quot;] = [
-        *request.scope[&quot;headers&quot;],
-        (VERSION_HEADER.lower().encode(), PROTOCOL_VERSION_CURRENT.encode()),
-    ]
-</code></pre>
+<p><a href="https://gist.github.com/xbill9/8ab6e51426b1cf781e0dfa48f7e62114">https://gist.github.com/xbill9/8ab6e51426b1cf781e0dfa48f7e62114</a></p>
+
 <p>A header that says <code>0.3</code> is a real client statement and should still be rejected. An absent header is not evidence of an old client. It is no evidence at all.</p>
 <p>It had also been latent for a week. The deployed image predated the version check in <code>a2a-sdk</code>, so the leg had been green for a reason that stopped being true the moment it was rebuilt.</p>
 <h4>A Session is a microVM</h4>
@@ -297,17 +267,8 @@ curl -s -o /dev/null -w '%{http_code}\n' &quot;${URL}.well-known/agent-card.json
 <p>The predecessor project left an open question. Scoping <code>bedrock-agentcore:InvokeAgentRuntime</code> to <code>runtime/&lt;id&gt;</code> and <code>runtime/&lt;id&gt;/*</code> was denied 403 on the agent-card fetch, and only <code>Resource: "*"</code> worked.</p>
 <p>The resource scope was never the problem. Discovery is a separate action.</p>
 <p>This policy works. Card fetch and invocation both 200, no wildcard resource anywhere:</p>
-<pre><code class="language-json">{
-  &quot;Action&quot;: [
-    &quot;bedrock-agentcore:InvokeAgentRuntime&quot;,
-    &quot;bedrock-agentcore:GetAgentCard&quot;
-  ],
-  &quot;Resource&quot;: [
-    &quot;arn:aws:bedrock-agentcore:us-west-2:&lt;acct&gt;:runtime/research_aws-&lt;id&gt;&quot;,
-    &quot;arn:aws:bedrock-agentcore:us-west-2:&lt;acct&gt;:runtime/research_aws-&lt;id&gt;/*&quot;
-  ]
-}
-</code></pre>
+<p><a href="https://gist.github.com/xbill9/cf9dc2116f48c10b30de320cf504ce0a">https://gist.github.com/xbill9/cf9dc2116f48c10b30de320cf504ce0a</a></p>
+
 <p>A missing action and a too-narrow resource both produce 403, which is exactly why widening the resource looked like the fix. Because the claim is about a live policy, it is re-checkable rather than remembered:</p>
 <pre><code class="language-shell">./infra/deploy_aws.sh scope-test
 </code></pre>
