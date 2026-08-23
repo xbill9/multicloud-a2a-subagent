@@ -22,6 +22,7 @@ inline data -- which is exactly why this mode exists.
 """
 
 import base64
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -325,7 +326,49 @@ def build(slug: str, out_path: Path, *, web: bool) -> Path:
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(page)
+
+    if web:
+        publish_copy(slug, page)
     return out_path
+
+
+#: Where the content-addressed copies live. Separate directory so the stable
+#: `docs/medium-<slug>.html` stays the canonical, linkable page.
+IMPORT_DIR = DOCS / "import"
+
+
+def publish_copy(slug: str, page: str) -> Path:
+    """Write the page again under a name derived from its own content.
+
+    **Medium's importer caches by URL and ignores the query string.** Measured
+    2026-08-23: after replacing every code block with a gist embed, pushing,
+    and confirming the new HTML live on Pages, importing `medium-aws.html`
+    returned the *previous* content -- flattened code, no gists. Importing
+    `medium-aws.html?v=gist1` returned the same stale copy. Both URLs served
+    the new content to curl at that moment.
+
+    That cache is why iterating on a Medium import feels impossible: you fix
+    the page, re-import, and grade the fix against a copy Medium fetched
+    before you made it. Twice here it read as "the fix did not work".
+
+    A content-addressed filename removes the failure mode rather than working
+    around it. Change any byte and the URL changes, so Medium has never seen
+    it and cannot have it cached; change nothing and the URL is stable, so
+    re-running this generator does not churn.
+    """
+    digest = hashlib.sha256(page.encode()).hexdigest()[:10]
+    IMPORT_DIR.mkdir(exist_ok=True)
+    target = IMPORT_DIR / f"{slug}-{digest}.html"
+    target.write_text(page)
+    # One import file per article. The old ones are this generator's own
+    # output, never linked from a published story -- the canonical URL is
+    # docs/medium-<slug>.html -- so pruning them keeps the directory honest
+    # about which copy is current.
+    for stale in IMPORT_DIR.glob(f"{slug}-*.html"):
+        if stale != target:
+            stale.unlink()
+    print(f"    import URL: {SITE}/import/{target.name}")
+    return target
 
 
 if __name__ == "__main__":
