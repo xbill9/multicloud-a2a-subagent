@@ -64,6 +64,13 @@ noted at the bottom.
    two in this piece (the interop matrix and the version-mismatch error) are
    narrow enough not to wrap.
 
+   **72 columns is the budget.** Anything wider wraps, and a wrapped aligned
+   transcript is worse than no transcript. The AWS piece quotes the deployed
+   run's timeline, which is 110 columns as captured -- it carries only the AWS
+   rows, with the `leg` column and the overlap bars trimmed, and says so above
+   the block. Trim to fit and disclose the trim; do not paste a record and let
+   Medium mangle it.
+
 ## Regenerating the graphics
 
 ```bash
