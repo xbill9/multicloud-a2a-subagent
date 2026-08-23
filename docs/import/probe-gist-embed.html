@@ -1,21 +1,25 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<title>Gist embed probe</title>
-<meta name="description" content="Which markup does Medium turn into a gist embed">
+<title>Which markup does Medium turn into a gist embed</title>
+<meta name="description" content="Five candidate markups for one gist, imported once.">
 </head><body><article>
-<h1>Gist embed probe</h1>
-<p>Six candidate markups for the same gist. Whichever renders as an embed after
-import is the one make_preview.py should emit. This page is temporary.</p>
-<h4>A-plaintext-url</h4>
+<h1>Which markup does Medium turn into a gist embed</h1>
+<p>This paragraph exists so the page reads as an article to Medium's importer, which rejected a thinner version of this same probe. The question under test is narrow: which of the markups below, all pointing at one gist, does the importer turn into an embed rather than leaving as a link.</p>
+<h4>A. Bare URL as plain text in a paragraph</h4>
+<p>This paragraph exists so the page reads as an article to Medium's importer, which rejected a thinner version of this same probe. The question under test is narrow: which of the markups below, all pointing at one gist, does the importer turn into an embed rather than leaving as a link.</p>
 <p>https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692</p>
-<h4>B-anchor</h4>
+<h4>B. Anchor, the current GIST_EMBED</h4>
+<p>This paragraph exists so the page reads as an article to Medium's importer, which rejected a thinner version of this same probe. The question under test is narrow: which of the markups below, all pointing at one gist, does the importer turn into an embed rather than leaving as a link.</p>
 <p><a href="https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692">https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692</a></p>
-<h4>C-script</h4>
-<figure><script src="https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692.js"></script></figure>
-<h4>D-iframe-pibb</h4>
-<figure><iframe src="https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692.pibb" width="100%" height="300" frameborder="0"></iframe></figure>
-<h4>E-figure-anchor</h4>
+<h4>C. Iframe to the gist pibb endpoint</h4>
+<p>This paragraph exists so the page reads as an article to Medium's importer, which rejected a thinner version of this same probe. The question under test is narrow: which of the markups below, all pointing at one gist, does the importer turn into an embed rather than leaving as a link.</p>
+<figure><iframe src="https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692.pibb" width="100%" height="260" frameborder="0"></iframe></figure>
+<h4>D. Figure wrapping an anchor</h4>
+<p>This paragraph exists so the page reads as an article to Medium's importer, which rejected a thinner version of this same probe. The question under test is narrow: which of the markups below, all pointing at one gist, does the importer turn into an embed rather than leaving as a link.</p>
 <figure><a href="https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692">https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692</a></figure>
-<h4>F-oembed-figure</h4>
+<h4>E. Figure carrying data-oembed-url</h4>
+<p>This paragraph exists so the page reads as an article to Medium's importer, which rejected a thinner version of this same probe. The question under test is narrow: which of the markups below, all pointing at one gist, does the importer turn into an embed rather than leaving as a link.</p>
 <figure data-oembed-url="https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692"><a href="https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692">https://gist.github.com/xbill9/27bc18ab1bccbf98ca8657d885378692</a></figure>
+<h4>End</h4>
+<p>This paragraph exists so the page reads as an article to Medium's importer, which rejected a thinner version of this same probe. The question under test is narrow: which of the markups below, all pointing at one gist, does the importer turn into an embed rather than leaving as a link.</p>
 </article></body></html>
