@@ -270,8 +270,8 @@ def gistify(text: str, slug: str) -> str:
     it = iter(have)
 
     def swap(match):
-        if match.group(2).strip().count("\n") < 1:
-            return match.group(0)          # single line survives the import
+        if not make_gists.needs_image(match.group(2)):
+            return match.group(0)          # imports intact as a code block
         block = next(it)
         entry = manifest[block["key"]]
         return "\n" + CODE_FIGURE.format(

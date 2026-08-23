@@ -228,8 +228,9 @@ interoperability.</p>
 
 <p>ADK and Agent Framework do not. <code>to_a2a()</code> takes an agent and serialises its event stream, and Agent Framework's <code>A2AExecutor</code> calls the agent too. Neither gives you a <code>(prompt) -&gt; reply</code> boundary, so anything you need to do between the model and the wire has to be done inside that framework's own object model.</p>
 <p>This is not a style complaint. It decides where a fact can be recorded. Every draft in this system carries one line:</p>
-<pre><code class="language-plaintext">&lt;!-- a2a-research agent=gcp model=gemini-2.5-flash brain=llm --&gt;
-</code></pre>
+<figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/code/framework-h01.png" alt="framework-h01-two-of-the-three-give-you-nowhere-to-sta.txt, 1 lines. &lt;!-- a2a-research agent=gcp model=gemini-2.5-flash brain=llm --&gt;"><figcaption>framework-h01-two-of-the-three-give-you-nowhere-to-sta.txt</figcaption></figure>
+<p><a href="https://gist.github.com/xbill9/a54981443401ab9f668b4f37521c6e87">Copy this block from the gist</a></p>
+
 <p>That line is written by the server, never by the model. It carries the two things the coordinator cannot reconstruct from its own side of the wire — which model actually answered, and whether a model answered at all. Ask the model to emit its own metadata and a model that gets it wrong misattributes a draft in the audit, which is the one error an audit cannot detect from the inside.</p>
 <p>Note- on ADK that wrapper became load-bearing the moment I added a tool. The first version concatenated the text of every event in the stream, which was correct while the stream held exactly one event. With <code>web_search</code> attached the stream also carries the model's commentary around each tool call, and concatenating those produces a draft that opens with the model narrating its own research. Keep only <code>event.is_final_response()</code>.</p>
 <h4>A Completed Task is Not The Answer</h4>

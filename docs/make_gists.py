@@ -54,6 +54,20 @@ BLOCK_RE = re.compile(r"^```(\w*)\n(.*?)^```", re.S | re.M)
 HEADING_RE = re.compile(r"^#{1,6} (.+)$", re.M)
 
 
+def needs_image(code: str) -> bool:
+    """Whether a fenced block has to become an image to survive an import.
+
+    Multi-line, because the importer flattens `<pre>` to one line. Or
+    comment-like, because its sanitiser strips `<!-- ... -->` even when the page
+    serves it correctly escaped. Everything else -- a one-line `curl` -- imports
+    intact as a Medium code block and is better left as text.
+
+    Shared with make_preview.py so the page and the gists cannot disagree about
+    which blocks are which.
+    """
+    return code.strip().count("\n") >= 1 or "<!--" in code
+
+
 def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "block"
 
@@ -67,19 +81,28 @@ def blocks(slug: str) -> list[dict]:
     piece knows what they are looking at; `gistfile1.txt` tells them nothing.
     """
     text = (DOCS / f"article-medium-{slug}.md").read_text()
-    out, n = [], 0
+    out, n, c = [], 0, 0
     for m in BLOCK_RE.finditer(text):
         lang, code = m.group(1), m.group(2)
-        if code.strip().count("\n") < 1:
-            continue                      # single line: nothing to flatten
-        n += 1
+        multiline = code.strip().count("\n") >= 1
+        if not needs_image(code):
+            continue
+        # Comment blocks are numbered in their own `h` series so that adding one
+        # cannot renumber the multi-line blocks -- a positional key that shifts
+        # would repoint every gist after it.
+        if multiline:
+            n += 1
+            key = f"{slug}-{n:02d}"
+        else:
+            c += 1
+            key = f"{slug}-h{c:02d}"
         heads = HEADING_RE.findall(text[: m.start()])
         hint = slugify(heads[-1]) if heads else "block"
         out.append({
-            "key": f"{slug}-{n:02d}",
+            "key": key,
             "lang": lang,
             "code": code,
-            "filename": f"{slug}-{n:02d}-{hint}.{EXT.get(lang, 'txt')}",
+            "filename": f"{key}-{hint}.{EXT.get(lang, 'txt')}",
             "description": f"{slug}: {heads[-1] if heads else slug}",
             "sha": hashlib.sha256(f"{lang}\0{code}".encode()).hexdigest()[:16],
         })

@@ -97,6 +97,13 @@
     "sha": "1ef46ec0212b786b",
     "url": "https://gist.github.com/xbill9/c5cb34b141c78d7312fe128ed04dd1cd"
   },
+  "framework-h01": {
+    "description": "framework: Two of the Three Give You Nowhere to Stand",
+    "filename": "framework-h01-two-of-the-three-give-you-nowhere-to-sta.txt",
+    "id": "a54981443401ab9f668b4f37521c6e87",
+    "sha": "ae53cf7b7c29ca64",
+    "url": "https://gist.github.com/xbill9/a54981443401ab9f668b4f37521c6e87"
+  },
   "gde-01": {
     "description": "gde: Serving ADK Over A2A",
     "filename": "gde-01-serving-adk-over-a2a.py",
@@ -138,5 +145,12 @@
     "id": "81503e37b58bd892f4147a82ea0e365c",
     "sha": "6a8658b347ec1708",
     "url": "https://gist.github.com/xbill9/81503e37b58bd892f4147a82ea0e365c"
+  },
+  "gde-h01": {
+    "description": "gde: There is No Function Seam",
+    "filename": "gde-h01-there-is-no-function-seam.txt",
+    "id": "6d51b23528899c36e540b4b895c0581b",
+    "sha": "ae53cf7b7c29ca64",
+    "url": "https://gist.github.com/xbill9/6d51b23528899c36e540b4b895c0581b"
   }
 }
