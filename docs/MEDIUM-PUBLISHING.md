@@ -44,11 +44,23 @@ Three things about that flow, each of which cost a wasted import to learn:
   returned the new one. The content-addressed name means Medium can never have
   seen the URL before, so there is nothing to serve stale.
 
+- **Medium's importer makes no embeds, from any markup.** Measured 2026-08-23
+  with one page carrying the same gist five ways: a bare URL, an anchor, a
+  figure wrapping an anchor and a figure with `data-oembed-url` all arrived as
+  plain links, and an `<iframe>` to the gist `.pibb` endpoint was dropped
+  outright. Zero iframes on the imported page. Do not spend another import
+  looking for the markup that works; there isn't one.
+
 - **Code lives in gists, not in the page.** Medium's importer flattens every
   `<pre>` to one line, and strips `<br>`, so a nine-line Dockerfile arrives as
-  one scrolling line. `make_gists.py` puts each multi-line block in a public
-  gist and `--web` emits the gist link, which Medium promotes to an embed.
-  Single-line blocks stay inline — nothing to flatten in a one-line `curl`.
+  one scrolling line. So each multi-line block is rendered as a PNG by
+  `make_code_images.py` and captioned with a link to the gist
+  `make_gists.py` put it in: the image guarantees it renders, the gist keeps it
+  copyable, and neither on its own does both. Single-line blocks stay inline —
+  nothing to flatten in a one-line `curl`.
+
+  Regenerate in order: `make_gists.py`, then `make_code_images.py`, then
+  `make_preview.py --web`.
 
 - **Images need no work at all.** Medium fetches them, rehosts them at 800px
   and takes the `<figcaption>` as the caption. That is the whole of step 2

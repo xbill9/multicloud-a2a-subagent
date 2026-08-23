@@ -27,6 +27,8 @@ import re
 import sys
 from pathlib import Path
 
+from html import escape as html_escape
+
 import markdown
 
 import make_gists
@@ -195,15 +197,39 @@ figcaption {
 """
 
 
-#: How a gist is handed to Medium's importer. This is the one uncertain
-#: element in the whole pipeline, so it is one constant rather than a shape
-#: spread through the code -- if Medium stops promoting a standalone link to
-#: an embed, this line is the only thing that changes.
+#: How a code block reaches Medium: as an image, captioned with a link to the
+#: gist it was rendered from.
 #:
-#: A bare link, not GitHub's `<script>` embed: an importer that sanitises HTML
-#: will drop a script tag, and Medium's link-to-embed promotion is the
-#: mechanism that is actually documented to work.
-GIST_EMBED = '<p><a href="{url}">{url}</a></p>'
+#: Not as an embed, and not for want of trying. One page carrying the same gist
+#: in five markups was imported 2026-08-23 and inspected. A bare URL, an anchor,
+#: a figure wrapping an anchor and a figure carrying `data-oembed-url` all came
+#: through as plain links; an `<iframe>` to the gist `.pibb` endpoint was
+#: dropped outright. Zero iframes on the imported page. Medium's importer makes
+#: no embeds from any markup, so an embed is not a thing this pipeline can
+#: produce and pretending otherwise just moves the failure later.
+#:
+#: The image guarantees it renders. The gist in the caption guarantees it is
+#: still copyable. Neither on its own does both.
+CODE_FIGURE = (
+    '<figure><img src="{img}" alt="{alt}">'
+    '<figcaption>{filename} &mdash; <a href="{url}">copy from the gist</a>'
+    '</figcaption></figure>'
+)
+
+
+def _code_alt(block: dict) -> str:
+    """Alt text for a code image: the code itself, which is its equivalent.
+
+    Capped, because a screen reader should not have to sit through a hundred
+    lines before the prose resumes -- and the caption links the gist, which is
+    where the full text lives anyway.
+    """
+    lines = block["code"].rstrip().split("\n")
+    flat = " / ".join(l.strip() for l in lines if l.strip())
+    if len(flat) > 480:
+        flat = flat[:480].rsplit(" / ", 1)[0] + " / ... full text in the linked gist"
+    return html_escape(f"{block['filename']}, {len(lines)} lines. {flat}")
+
 
 #: Alt text for a cover, stated in words like every other figure's -- a cover
 #: is the one image a screen reader meets before any prose has framed it.
@@ -238,7 +264,13 @@ def gistify(text: str, slug: str) -> str:
     def swap(match):
         if match.group(2).strip().count("\n") < 1:
             return match.group(0)          # single line survives the import
-        return GIST_EMBED.format(url=manifest[next(it)["key"]]["url"])
+        block = next(it)
+        entry = manifest[block["key"]]
+        return "\n" + CODE_FIGURE.format(
+            img=f"{SITE}/img/medium/code/{block['key']}.png",
+            alt=_code_alt(block),
+            filename=block["filename"],
+            url=entry["url"]) + "\n"
 
     return make_gists.BLOCK_RE.sub(swap, text)
 
