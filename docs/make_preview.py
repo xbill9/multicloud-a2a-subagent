@@ -210,6 +210,18 @@ def build(slug: str, out_path: Path, *, web: bool) -> Path:
     text = re.sub(r"^### .+$", "", text, count=1, flags=re.M)
 
     html = markdown.markdown(text, extensions=["fenced_code", "attr_list", "sane_lists"])
+
+    if web:
+        # Medium's importer collapses the newlines inside <pre>, so every
+        # fenced block arrives as one long horizontally-scrolling line --
+        # measured 2026-08-23 importing medium-aws.html at medium.com/p/import.
+        # Explicit <br> survives it. The proof mode does not need this, because
+        # a browser honours white-space:pre on its own.
+        html = re.sub(
+            r"(<pre[^>]*><code[^>]*>)(.*?)(</code></pre>)",
+            lambda m: m.group(1) + m.group(2).replace("\n", "<br>") + m.group(3),
+            html, flags=re.S)
+
     count = html.count("<img")
     first_image = ""
 

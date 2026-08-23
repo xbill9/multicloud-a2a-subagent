@@ -207,53 +207,20 @@ interoperability.</p>
 <h4>Three Frameworks, Three Shapes</h4>
 <p>Here is the entire model-side construction on each cloud. Not excerpts — this is all of it.</p>
 <p>Google, ADK:</p>
-<pre><code class="language-python">from google.adk.agents import LlmAgent
-
-LlmAgent(
-    model=&quot;gemini-2.5-flash&quot;,          # a model id string
-    name=..., description=...,
-    instruction=INSTRUCTION,           # `instruction`
-    tools=[web_search],                # a plain callable
-)
-</code></pre>
+<pre><code class="language-python">from google.adk.agents import LlmAgent<br><br>LlmAgent(<br>    model=&quot;gemini-2.5-flash&quot;,          # a model id string<br>    name=..., description=...,<br>    instruction=INSTRUCTION,           # `instruction`<br>    tools=[web_search],                # a plain callable<br>)<br></code></pre>
 <p>AWS, Strands:</p>
-<pre><code class="language-python">from strands import Agent, tool
-from strands.models import BedrockModel
-
-Agent(
-    model=BedrockModel(model_id=&quot;us.amazon.nova-micro-v1:0&quot;),
-    system_prompt=INSTRUCTION,         # `system_prompt`
-    tools=[tool(web_search)],          # explicitly decorated
-)
-</code></pre>
+<pre><code class="language-python">from strands import Agent, tool<br>from strands.models import BedrockModel<br><br>Agent(<br>    model=BedrockModel(model_id=&quot;us.amazon.nova-micro-v1:0&quot;),<br>    system_prompt=INSTRUCTION,         # `system_prompt`<br>    tools=[tool(web_search)],          # explicitly decorated<br>)<br></code></pre>
 <p>Azure, Agent Framework:</p>
-<pre><code class="language-python">from agent_framework import Agent
-from agent_framework.foundry import FoundryChatClient
-from azure.identity import DefaultAzureCredential
-
-Agent(
-    client=FoundryChatClient(          # a *chat client*, not a model
-        project_endpoint=os.environ[&quot;FOUNDRY_PROJECT_ENDPOINT&quot;],
-        model=model_id(),
-        credential=DefaultAzureCredential(),
-    ),
-    instructions=INSTRUCTION,          # `instructions`, plural
-    tools=[web_search],
-    default_options={&quot;store&quot;: False},
-)
-</code></pre>
+<pre><code class="language-python">from agent_framework import Agent<br>from agent_framework.foundry import FoundryChatClient<br>from azure.identity import DefaultAzureCredential<br><br>Agent(<br>    client=FoundryChatClient(          # a *chat client*, not a model<br>        project_endpoint=os.environ[&quot;FOUNDRY_PROJECT_ENDPOINT&quot;],<br>        model=model_id(),<br>        credential=DefaultAzureCredential(),<br>    ),<br>    instructions=INSTRUCTION,          # `instructions`, plural<br>    tools=[web_search],<br>    default_options={&quot;store&quot;: False},<br>)<br></code></pre>
 <p>Three names for the system prompt. Three levels at which the model is named: a string, a model object, a client holding an endpoint and a credential. Three tool conventions.</p>
 <p>None of that is hard. All of it is untranslatable.</p>
 <p>There is no adapter that turns these into one object, and every hour I have seen spent trying to build one produced a fourth thing to maintain that then became what was actually under test. Share the prompt, the tool and the wire format. Do not try to share the agent.</p>
 <h4>Two of the Three Give You Nowhere to Stand</h4>
 <p>Strands hands you a function. Everything else can wrap it from outside:</p>
-<pre><code class="language-python">async def respond(prompt: str) -&gt; str:
-    return str(await agent.invoke_async(prompt))
-</code></pre>
+<pre><code class="language-python">async def respond(prompt: str) -&gt; str:<br>    return str(await agent.invoke_async(prompt))<br></code></pre>
 <p>ADK and Agent Framework do not. <code>to_a2a()</code> takes an agent and serialises its event stream, and Agent Framework's <code>A2AExecutor</code> calls the agent too. Neither gives you a <code>(prompt) -&gt; reply</code> boundary, so anything you need to do between the model and the wire has to be done inside that framework's own object model.</p>
 <p>This is not a style complaint. It decides where a fact can be recorded. Every draft in this system carries one line:</p>
-<pre><code class="language-plaintext">&lt;!-- a2a-research agent=gcp model=gemini-2.5-flash brain=llm --&gt;
-</code></pre>
+<pre><code class="language-plaintext">&lt;!-- a2a-research agent=gcp model=gemini-2.5-flash brain=llm --&gt;<br></code></pre>
 <p>That line is written by the server, never by the model. It carries the two things the coordinator cannot reconstruct from its own side of the wire — which model actually answered, and whether a model answered at all. Ask the model to emit its own metadata and a model that gets it wrong misattributes a draft in the audit, which is the one error an audit cannot detect from the inside.</p>
 <p>Note- on ADK that wrapper became load-bearing the moment I added a tool. The first version concatenated the text of every event in the stream, which was correct while the stream held exactly one event. With <code>web_search</code> attached the stream also carries the model's commentary around each tool call, and concatenating those produces a draft that opens with the model narrating its own research. Keep only <code>event.is_final_response()</code>.</p>
 <h4>A Completed Task is Not The Answer</h4>
@@ -267,29 +234,21 @@ Agent(
 <p>"The call succeeded" and "you received the answer" are different claims in A2A.</p>
 <h4>The Agent Card Advertises an Address You Cannot Dial</h4>
 <p><code>to_a2a(agent, host, port)</code> writes the bind address straight into the card:</p>
-<pre><code class="language-console">$ curl -s https://&lt;the-adk-agent&gt;.run.app/.well-known/agent-card.json
-
-{&quot;url&quot;: null,
- &quot;additionalInterfaces&quot;: [
-   {&quot;url&quot;: &quot;http://0.0.0.0:8080&quot;, &quot;protocolBinding&quot;: &quot;JSONRPC&quot;}
- ]}
-</code></pre>
+<pre><code class="language-console">$ curl -s https://&lt;the-adk-agent&gt;.run.app/.well-known/agent-card.json<br><br>{&quot;url&quot;: null,<br> &quot;additionalInterfaces&quot;: [<br>   {&quot;url&quot;: &quot;http://0.0.0.0:8080&quot;, &quot;protocolBinding&quot;: &quot;JSONRPC&quot;}<br> ]}<br></code></pre>
 <p>A public HTTPS endpoint advertising unroutable plaintext. The AWS and Azure agents take a <code>PUBLIC_URL</code> and advertise that — the behaviour ADK is missing, not anything clever.</p>
 <p>Note- it cannot reproduce locally, because on a laptop the bind address and the dial address are the same string. It needs a deployment, which is exactly how it survives into one.</p>
 <p>Which clients survive it is the opposite of what the ergonomics would predict:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/03-bad-card.png" alt="Which client survives a card advertising 0.0.0.0:8080. The a2a-sdk client is ok because it rewrites the interfaces after card resolution. The agent-framework A2AAgent is ok because it never routes by card, so a bad card is inert. Google ADK's own RemoteA2aAgent fails, because it routes by card and dials 0.0.0.0:8080"><figcaption>Which client survives a card advertising 0.0.0.0:8080. The a2a-sdk client is ok because it rewrites the interfaces after card resolution. The agent-framework A2AAgent is ok because it never routes by card, so a bad card is inert. Google ADK's own RemoteA2aAgent fails, because it routes by card and dials 0.0.0.0:8080</figcaption></figure>
 <p>ADK's own client cannot reach ADK's own server once hosted. Both halves ship green in Google's own tests, because locally the two addresses are identical. And the stack that has no seam to patch a resolved card is the one that never needed it, because it dials the URL you constructed it with.</p>
 <p>Then the failure is reported at the wrong layer:</p>
-<pre><code class="language-plaintext">AttributeError: 'A2AClientError' object has no attribute 'status_code'
-</code></pre>
+<pre><code class="language-plaintext">AttributeError: 'A2AClientError' object has no attribute 'status_code'<br></code></pre>
 <p>The error handler assumes any <code>A2AClientError</code> carries a status code, which a transport failure does not. The real cause — <code>All connection attempts failed</code> — lands on a separate log line. Two defects compounding: the first sends the client to an unroutable address, the second deletes the evidence of where it went.</p>
 <h4>The Platform Edits Your Request</h4>
 <p>The runtime is not a deployment detail either. Each imposes a contract on the container, and they do not agree:</p>
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/04-platform-contracts.png" alt="The three runtime contracts. Cloud Run: port $PORT 8080, your own invoke path and health route, any architecture, source buildpack build, one deploy flag for ingress auth, cold starts per instance, A2A-Version header forwarded. AgentCore Runtime: port 9000, invoke path slash with the platform exposing /invocations/, health is GET /ping returning Healthy, ARM64 required, image build, IAM plus CUSTOM_JWT, cold starts per session as a microVM, and the A2A-Version header is dropped. Container Apps: port 8080, your own paths, amd64, image build, ingress auth is a separate deploy step, cold starts per revision replica, header forwarded"><figcaption>The three runtime contracts. Cloud Run: port $PORT 8080, your own invoke path and health route, any architecture, source buildpack build, one deploy flag for ingress auth, cold starts per instance, A2A-Version header forwarded. AgentCore Runtime: port 9000, invoke path slash with the platform exposing /invocations/, health is GET /ping returning Healthy, ARM64 required, image build, IAM plus CUSTOM_JWT, cold starts per session as a microVM, and the A2A-Version header is dropped. Container Apps: port 8080, your own paths, amd64, image build, ingress auth is a separate deploy step, cold starts per revision replica, header forwarded</figcaption></figure>
 <p>Three of those rows cost real time.</p>
 <p><strong>AgentCore does not forward the <code>A2A-Version</code> header.</strong> <code>a2a-sdk</code> reads the protocol version from that header and, when it is absent, assumes <code>0.3</code> — then rejects the request its own handler cannot serve:</p>
-<pre><code class="language-plaintext">A2A version '0.3' is not supported by this handler. Expected version '1.0'.
-</code></pre>
+<pre><code class="language-plaintext">A2A version '0.3' is not supported by this handler. Expected version '1.0'.<br></code></pre>
 <p>Cloud Run and Container Apps pass it through untouched. So the same client, the same <code>a2a-sdk</code> on both ends, the same server code, and the third cloud fails with an error that blames the protocol version and names nothing about the platform that removed it.</p>
 <p>The fix is to assume the current version when the header is missing, and only when it is missing. A header that says <code>0.3</code> is a real client statement and should still be rejected. Absent is not evidence of an old client. It is no evidence at all.</p>
 <p><strong>An AgentCore session gets its own microVM.</strong> I was minting a fresh session id per call, so every call paid for a microVM start. It presented as a fixed per-client cost until the slow cell moved between clients — and a fixed per-client cost cannot move. Something per-call can:</p>
@@ -303,16 +262,7 @@ Agent(
 <p><code>a2a-sdk</code> — resolve the card, mutate it, build a client, iterate typed chunks, close it. Verbose, and the only one low-level enough to work around the card defect above.</p>
 <p><code>google-adk</code> <code>RemoteA2aAgent</code> — a <code>BaseAgent</code> meant to live inside an agent tree. Using it as a plain client means standing up a <code>Runner</code>, a session service and a session, per request. The ADK stack assumes A2A is something an agent does, not something a program does.</p>
 <p>Every client against every server, local and with no model in the path:</p>
-<pre><code class="language-console">$ python3 -m matrix.runner
-
-client \ server  gcp          aws          azure
--------------------------------------------------
-a2a-sdk          ok 134ms     ok 8ms       ok 8ms
-agent-framework  ok 129ms     ok 7ms       ok 8ms
-google-adk       ok 920ms     ok 9ms       ok 10ms
-
-9/9 attempted cells succeeded
-</code></pre>
+<pre><code class="language-console">$ python3 -m matrix.runner<br><br>client \ server  gcp          aws          azure<br>-------------------------------------------------<br>a2a-sdk          ok 134ms     ok 8ms       ok 8ms<br>agent-framework  ok 129ms     ok 7ms       ok 8ms<br>google-adk       ok 920ms     ok 9ms       ok 10ms<br><br>9/9 attempted cells succeeded<br></code></pre>
 <p>Read that as an ordering and nothing more — single runs on loopback. And read it with the honest dependency in front of you: all three client stacks resolve to the same <code>a2a-sdk</code> wire implementation underneath, and two of the three servers share serving scaffolding.</p>
 <p>Note- nine cells is a presentation, not nine independent experiments. Which is what makes the failures above interesting. Shared implementation on both ends should have made all of this trivial.</p>
 <h4>The Models Differ Where a Rubric Cannot See</h4>
@@ -333,10 +283,7 @@ google-adk       ok 920ms     ok 9ms       ok 10ms
 <figure><img src="https://xbill9.github.io/multicloud-a2a-subagent/img/medium/09-search-use.png" alt="Zero-search drafts, with the same tool and the same six-call budget on every cloud. AWS under instruction v1: 7 of 7 drafts made no search. AWS under v2: 2 of 9. AWS under v3: 1 of 7. Azure across all versions: 1 of 16. GCP under v3: none, because it spends the whole six-call budget every run"><figcaption>Zero-search drafts, with the same tool and the same six-call budget on every cloud. AWS under instruction v1: 7 of 7 drafts made no search. AWS under v2: 2 of 9. AWS under v3: 1 of 7. Azure across all versions: 1 of 16. GCP under v3: none, because it spends the whole six-call budget every run</figcaption></figure>
 <p>Two ends of one finding. Nova had to be told, twice, and still skips a run in seven. Gemini sits on the ceiling in every single v3 run, which means the budget is now shaping the drafts I am comparing.</p>
 <p>And the first model-backed run gave me the sharpest version of it:</p>
-<pre><code class="language-plaintext">azure  searches=2   evidence 0.0
-gcp    searches=0   evidence 5.0
-aws    searches=0   evidence 0.0
-</code></pre>
+<pre><code class="language-plaintext">azure  searches=2   evidence 0.0<br>gcp    searches=0   evidence 5.0<br>aws    searches=0   evidence 0.0<br></code></pre>
 <p>The model that scored full marks on evidence never searched. Five points of citation-shaped text with nothing behind it. The rubric counts the gesture, which I had written down as a known weakness before search existed and now had as a measured one.</p>
 <p>The cause was upstream of the models: the shared instruction never told anyone to search. Fixing it took three versions, and v2 is a warning in the other direction — it said "one search for each specific figure", Gemini read that literally and spent 24 searches on a 300-word brief, which is enough to exhaust the project's Vertex quota on its own. v3 names the budget the tool enforces, so the model plans against the bound instead of being cut off by it.</p>
 <p>Note- version the instruction like you version the rubric. Runs either side of a prompt change are answering different questions, and an audit that averages across one reports a prompt edit as a change in the models.</p>
