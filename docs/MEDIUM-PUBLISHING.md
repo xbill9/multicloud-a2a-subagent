@@ -20,7 +20,44 @@ noted at the bottom.
 > deployed then and stale about what this repo now is. The steps below apply to
 > them too; the image list does not.
 
-## The steps
+## The import route, which is the one to use
+
+Everything below this section is the manual paste route. It works and it is
+slow. **Import is faster and now loses nothing**, so use it unless it breaks.
+
+```bash
+python3 docs/make_gists.py       # only if a code block changed
+python3 docs/make_preview.py --web
+git add -A && git commit && git push     # Pages must serve it before importing
+```
+
+`make_preview.py --web` prints an **import URL** for each article, pointing at
+`docs/import/<slug>-<sha10>.html`. Wait for Pages to serve it, then paste that
+URL into `medium.com/p/import`. It arrives as a draft.
+
+Three things about that flow, each of which cost a wasted import to learn:
+
+- **Use the printed import URL, never `medium-<slug>.html`.** Medium's importer
+  caches by URL *and ignores the query string* — `?v=2` does not defeat it.
+  Measured 2026-08-23: a page whose code blocks had just been replaced with
+  gists imported as the previous version, twice, while curl on the same URL
+  returned the new one. The content-addressed name means Medium can never have
+  seen the URL before, so there is nothing to serve stale.
+
+- **Code lives in gists, not in the page.** Medium's importer flattens every
+  `<pre>` to one line, and strips `<br>`, so a nine-line Dockerfile arrives as
+  one scrolling line. `make_gists.py` puts each multi-line block in a public
+  gist and `--web` emits the gist link, which Medium promotes to an embed.
+  Single-line blocks stay inline — nothing to flatten in a one-line `curl`.
+
+- **Images need no work at all.** Medium fetches them, rehosts them at 800px
+  and takes the `<figcaption>` as the caption. That is the whole of step 2
+  below, done automatically.
+
+After the import: check the subtitle took (step 5 below), and set the images
+full width.
+
+## The steps, by hand
 
 1. Open a new Medium story and paste the body of `article-medium-framework.md`,
    starting at the H1. Medium keeps `#`/`##`, `>`, backtick fences, bold and
