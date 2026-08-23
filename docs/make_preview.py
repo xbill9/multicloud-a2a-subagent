@@ -218,8 +218,8 @@ def build(slug: str, out_path: Path, *, web: bool) -> Path:
         # Explicit <br> survives it. The proof mode does not need this, because
         # a browser honours white-space:pre on its own.
         html = re.sub(
-            r"(<pre[^>]*><code[^>]*>)(.*?)(</code></pre>)",
-            lambda m: m.group(1) + m.group(2).replace("\n", "<br>") + m.group(3),
+            r"<pre[^>]*><code[^>]*>(.*?)</code></pre>",
+            lambda m: "<pre>" + m.group(1) + "</pre>",
             html, flags=re.S)
 
     count = html.count("<img")
